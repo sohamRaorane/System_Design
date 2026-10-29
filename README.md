@@ -4,8 +4,8 @@ An OpenTelemetry trace pipeline: **ingest → bounded queue → trace aggregatio
 sampling → batched storage → cold archive**, with live config, metrics, health checks and
 failure drills.
 
-> Status: **Phase 0 (foundation)**. The collector engine works locally; OTLP ingest, the React
-> dashboard, GitHub sign-in and cloud deployment arrive in Phases 1–5 (see `docs/architecture.md`).
+> Status: **Phase 1 (walking skeleton)**. Real OpenTelemetry SDKs export to the collector over
+> OTLP/HTTP (protobuf or JSON); the React dashboard shows the pipeline and the traces.
 
 ## Repository layout
 
@@ -15,7 +15,9 @@ apps/
     src/            ingest, queue, aggregate, sample, batch, store, archive, control, metrics, query
     test/           node:test suites
     config/         default runtime config
-    public/         legacy single-page dashboard (replaced by apps/web in Phase 1)
+  web/              React + Vite dashboard
+examples/
+  demo-shop/        3 services instrumented with OpenTelemetry zero-code (the "user app")
 tools/
   loadgen/          Railway-reservation trace generator + end-to-end reconciliation check
 docs/
@@ -24,7 +26,6 @@ docs/
   diagram/          architecture diagram
 ```
 
-Planned (later phases): `apps/web` (React + Vite), `packages/shared`, `examples/demo-shop`.
 
 ## Quick start
 
@@ -32,7 +33,8 @@ Requires Node.js 22.13 or newer (the collector uses the built-in `node:sqlite`; 
 
 ```bash
 npm install
-npm start                 # collector + legacy dashboard at http://localhost:4318
+npm start                 # collector on http://localhost:4318
+npm run dev:web           # dashboard on http://localhost:5173 (proxies to the collector)
 npm run loadgen           # 20 traces/s for 60 s
 npm run loadgen:burst     # 15,000 spans as fast as possible
 npm test                  # all workspace tests
@@ -40,13 +42,24 @@ npm run reset             # delete apps/collector/data and apps/collector/cold
 npm run reconcile -- --duration 120 --wait 40 [--storage-outage]   # exact end-to-end check
 ```
 
+See it work with a real OpenTelemetry app:
+
+```bash
+cd examples/demo-shop && npm install && npm start        # 3 instrumented services on :3000
+npm run traffic -- http://localhost:3000 3 60             # checkouts for 60 s
+```
+
+Open the dashboard: each checkout is one trace across `demo-gateway`, `demo-orders` and
+`demo-payments`; failed and slow payments are always kept.
+
 Environment variables: see `.env.example`.
 
 ## Collector API
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/traces` | Ingest spans (internal JSON format today; OTLP in Phase 1) |
+| POST | `/v1/traces` | Ingest: OTLP/HTTP protobuf, OTLP/JSON, or the legacy flat JSON |
+| POST | `/v1/metrics`, `/v1/logs` | Acknowledged, not stored (traces only in v1.0) |
 | GET | `/v1/traces` | Search: `status, service, reason, min_duration_ms, from, to, limit, cursor, include_archived` |
 | GET | `/v1/traces/:id` | One trace from hot store, in-flight, pending batch or cold archive |
 | GET/PUT | `/v1/config` | Runtime config (PUT guarded by `X-Admin-Token` when `ADMIN_TOKEN` is set) |

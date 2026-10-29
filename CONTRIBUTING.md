@@ -6,8 +6,9 @@
 - `dev` — integration; Vercel preview deploys from here.
 - Work branches from `dev`: `feat/p<phase>-<topic>`, `fix/p<phase>-<topic>`, `chore/…`,
   `docs/…`. Hotfixes: `hotfix/<topic>` from `main`, merged into `main` and `dev`.
-- Feature branches are **squash-merged** into `dev`; `dev` is merged into `main` with a
-  merge commit at each gate.
+- Feature branches are merged into `dev` with `git merge --no-ff`, so each feature's own
+  commits stay visible and bisectable; `dev` is merged into `main` with a merge commit at
+  each gate.
 
 ## Commit messages (Conventional Commits)
 ```
