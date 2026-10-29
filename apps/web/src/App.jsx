@@ -10,6 +10,7 @@ import { Overview } from './pages/Overview.jsx';
 import { Traces } from './pages/Traces.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { Connect } from './pages/Connect.jsx';
+import { LoadTest } from './pages/LoadTest.jsx';
 
 export function Redirect({ to }) {
   const { navigate } = useRouter();
@@ -23,6 +24,7 @@ const PROJECT_PAGES = {
   traces: (p) => <Traces {...p} />,
   settings: (p) => <Settings {...p} />,
   connect: (p) => <Connect {...p} />,
+  load: (p) => <LoadTest {...p} />,
 };
 
 export function App() {
@@ -74,6 +76,7 @@ function Shell() {
             <>
               <Link to={`${base}/overview`}>Overview</Link>
               <Link to={`${base}/traces`} activePrefix={`${base}/traces`}>Traces</Link>
+              <Link to={`${base}/load`}>Load test</Link>
               {!proj?.is_default ? <Link to={`${base}/connect`}>Repository</Link> : null}
               <Link to={`${base}/settings`}>Settings</Link>
             </>

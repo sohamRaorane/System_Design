@@ -21,14 +21,15 @@ export function Traces({ pid, base, traceId }) {
   const service = query.get('service') || '';
   const minMs = query.get('min_ms') || '';
   const archived = query.get('archived') === '1';
+  const loadtest = query.get('loadtest') || '';
   const [pages, setPages] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [lookup, setLookup] = useState('');
 
-  const filters = { ...(VIEWS.find((v) => v.key === view)?.filters || {}), service: service || undefined, min_duration_ms: minMs || undefined, include_archived: archived ? 'true' : undefined, limit: 30 };
-  const list = useData(() => api.traces(pid, filters), [pid, view, service, minMs, archived], { every: 5000 });
+  const filters = { ...(VIEWS.find((v) => v.key === view)?.filters || {}), service: service || undefined, min_duration_ms: minMs || undefined, include_archived: archived ? 'true' : undefined, loadtest: loadtest || undefined, limit: 30 };
+  const list = useData(() => api.traces(pid, filters), [pid, view, service, minMs, archived, loadtest], { every: 5000 });
   const services = useData(() => api.services(pid), [pid], { every: 30000 });
-  useEffect(() => { setPages([]); setCursor(null); }, [pid, view, service, minMs, archived]);
+  useEffect(() => { setPages([]); setCursor(null); }, [pid, view, service, minMs, archived, loadtest]);
   useEffect(() => { if (list.data && !pages.length) setCursor(list.data.next_cursor); }, [list.data, pages.length]);
 
   const setParam = (k, v) => {
@@ -80,6 +81,7 @@ export function Traces({ pid, base, traceId }) {
                 <option value="1000">Slower than 1 s</option>
                 <option value="2000">Slower than 2 s</option>
               </select>
+              {loadtest ? <button type="button" className="chip" aria-pressed="true" onClick={() => setParam('loadtest', '')} title="Show all traces again">Only test run {loadtest.slice(-6)} ✕</button> : null}
               <label className="row small" style={{ gap: 6 }}>
                 <input type="checkbox" checked={archived} onChange={(e) => setParam('archived', e.target.checked ? '1' : '')} /> Include archived
               </label>
@@ -129,8 +131,8 @@ function TraceDetail({ pid, traceId, onClose }) {
         <>
           <div className="facts">
             <span><b>{ms(t.duration_ms)}</b> total</span>
-            <span><b>{t.span_count}</b> spans</span>
-            <span><b>{(t.services || []).length}</b> services</span>
+            <span><b>{t.span_count}</b> {t.span_count === 1 ? 'span' : 'spans'}</span>
+            <span><b>{(t.services || []).length}</b> {(t.services || []).length === 1 ? 'service' : 'services'}</span>
             <span>{t.status === 'ERROR' ? <b style={{ color: 'var(--bad)' }}>Failed</b> : <b>Succeeded</b>}</span>
             <ReasonBadge reason={t.sample_reason} />
             {t.is_complete === false ? <span title="Some spans never arrived">Incomplete</span> : null}

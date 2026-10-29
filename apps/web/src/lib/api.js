@@ -112,6 +112,14 @@ export const api = {
   openPullRequest: (pid, service_name) => request(`${P(pid)}/repo/pull-request`, { method: 'POST', body: { service_name } }),
   unlinkRepo: (pid) => request(`${P(pid)}/repo`, { method: 'DELETE' }),
 
+  loadtests: (pid) => request(`${P(pid)}/loadtests`),
+  loadtestLimits: (pid) => request(`${P(pid)}/loadtests/limits`),
+  verifyTarget: (pid, url) => request(`${P(pid)}/loadtests/verify` + qs({ url })),
+  startLoadTest: (pid, body) => request(`${P(pid)}/loadtests`, { method: 'POST', body }),
+  startDemoTraffic: (pid, body) => request(`${P(pid)}/demo-traffic`, { method: 'POST', body }),
+  loadtest: (pid, id) => request(`${P(pid)}/loadtests/${id}`),
+  stopLoadTest: (pid, id) => request(`${P(pid)}/loadtests/${id}/stop`, { method: 'POST' }),
+
   adminConfig: () => request('/api/admin/config'),
   updateAdminConfig: (patch) => request('/api/admin/config', { method: 'PUT', body: patch }),
   faults: () => request('/api/admin/faults'),
