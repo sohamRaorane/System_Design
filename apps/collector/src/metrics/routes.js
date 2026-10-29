@@ -1,13 +1,20 @@
 'use strict';
 // GET /metrics and GET /health (section 5.11).
 const express = require('express');
-const { snapshot } = require('./metrics');
+const { snapshot, toPrometheus } = require('./metrics');
 
 function metricsRouter(ctx) {
   const router = express.Router();
 
   // Operators: /metrics (X-Admin-Token in production). Dashboard users: /api/pipeline.
-  router.get('/metrics', ctx.auth.operatorGuard, async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
+  router.get('/metrics', ctx.auth.operatorGuard, async (req, res) => {
+    const snap = await snapshot(ctx.metrics, ctx);
+    // Prometheus/Grafana Agent scrape: /metrics?format=prometheus (or Accept: text/plain)
+    if (req.query.format === 'prometheus' || /text\/plain/.test(String(req.get('accept') || ''))) {
+      return res.type('text/plain; version=0.0.4').send(toPrometheus(snap));
+    }
+    res.json(snap);
+  });
   router.get('/api/pipeline', ctx.auth.requireUser, async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
 
   // Liveness for the hosting platform: the process is up and serving. Deliberately ignores

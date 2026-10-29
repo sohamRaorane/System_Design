@@ -43,3 +43,18 @@ test('sign-in endpoints are limited per client IP', async () => {
     assert.deepEqual(codes, [200, 200, 200, 429, 429]);
   } finally { await h.cleanup(); }
 });
+
+test('self-observability: event-loop delay and memory in /metrics; Prometheus text format', async () => {
+  const h = await harness();
+  const url = await h.listen();
+  try {
+    const m = await (await fetch(url + '/metrics')).json();
+    assert.ok(m.process.heap_used_mb > 0);
+    assert.ok('p99' in m.process.event_loop_delay_ms);
+    const text = await (await fetch(url + '/metrics?format=prometheus')).text();
+    assert.match(text, /^tracepipe_ingestion_spans_received \d+$/m);
+    assert.match(text, /^tracepipe_queue_state\{state="NORMAL"\} 1$/m);
+    assert.match(text, /^tracepipe_process_heap_used_mb \d+$/m);
+    assert.ok(!/NaN|undefined/.test(text));
+  } finally { await h.cleanup(); }
+});
