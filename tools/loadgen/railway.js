@@ -2,6 +2,7 @@
 // Railway Reservation load generator.
 //   node loadgen/railway.js --rate 20 --duration 60 [--mix error=5,slow=5,success=90] [--seed 42]
 //   node loadgen/railway.js --burst 15000
+//   add --key otk_... (or INGEST_KEY=...) to send into a project instead of "default"
 const { mulberry32 } = require('../../apps/collector/src/util/common');
 const { hashToUnit } = require('../../apps/collector/src/sample/sampler');
 const { DEFAULT_MIX, TYPES, pickType, parseMix, buildTrace } = require('./scenarios');
@@ -10,7 +11,7 @@ const MAX_BATCH = 50;
 const MAX_LOCAL_BUFFER = 10000;
 
 function parseArgs(argv) {
-  const a = { rate: 20, duration: 60, burst: 0, seed: null, mix: DEFAULT_MIX, url: process.env.COLLECTOR_URL || 'http://localhost:4318', sampleRate: 0.1 };
+  const a = { rate: 20, duration: 60, burst: 0, seed: null, mix: DEFAULT_MIX, url: process.env.COLLECTOR_URL || 'http://localhost:4318', sampleRate: 0.1, key: process.env.INGEST_KEY || '' };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const v = () => argv[++i];
@@ -21,6 +22,7 @@ function parseArgs(argv) {
     else if (k === '--mix') a.mix = parseMix(v());
     else if (k === '--url') a.url = v();
     else if (k === '--normal-rate') a.sampleRate = Number(v());
+    else if (k === '--key') a.key = v();
     else throw new Error(`unknown flag ${k}`);
   }
   return a;
@@ -30,8 +32,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Sends batches serially; honours 429 Retry-After; retries network errors with backoff. */
 class Sender {
-  constructor(url, log = () => {}) {
+  constructor(url, log = () => {}, key = '') {
     this.url = url.replace(/\/$/, '') + '/v1/traces';
+    this.headers = { 'content-type': 'application/json', ...(key ? { 'x-api-key': key } : {}) };
     this.log = log;
     this.outbox = []; // { due, span }
     this.stats = { requests: 0, spans_sent: 0, throttled_429: 0, network_retries: 0, dropped_local: 0, invalid: 0 };
@@ -54,7 +57,7 @@ class Sender {
     let attempt = 0;
     for (;;) {
       try {
-        const res = await fetch(this.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ spans: batch }) });
+        const res = await fetch(this.url, { method: 'POST', headers: this.headers, body: JSON.stringify({ spans: batch }) });
         if (res.status === 429) {
           this.stats.throttled_429++;
           const wait = Number(res.headers.get('retry-after') || 1) * 1000;
@@ -96,7 +99,7 @@ class Sender {
 
 async function runSteady(args) {
   const rng = mulberry32(args.seed ?? Math.floor(Math.random() * 2 ** 32));
-  const sender = new Sender(args.url, (m) => console.log('[loadgen]', m));
+  const sender = new Sender(args.url, (m) => console.log('[loadgen]', m), args.key);
   const sent = Object.fromEntries(TYPES.map((t) => [t, 0]));
   const expect = { spans_total: 0, duplicate_spans: 0, normal_sampled_expected: 0 };
   let finished = false;
@@ -130,7 +133,7 @@ async function runSteady(args) {
 
 async function runBurst(args) {
   const rng = mulberry32(args.seed ?? 1);
-  const sender = new Sender(args.url, (m) => console.log('[loadgen]', m));
+  const sender = new Sender(args.url, (m) => console.log('[loadgen]', m), args.key);
   const sent = Object.fromEntries(TYPES.map((t) => [t, 0]));
   const expect = { spans_total: 0, duplicate_spans: 0, normal_sampled_expected: 0 };
   const all = [];

@@ -1,5 +1,7 @@
 'use strict';
-// Counters, rolling rates and latency percentiles (section 5.11).
+// Counters, rolling rates and latency percentiles (section 5.11), plus the collector's own
+// process health (event-loop delay, memory) and a Prometheus text rendering.
+const { monitorEventLoopDelay } = require('node:perf_hooks');
 
 /** Rate over the last `windowSec` complete 1-second buckets. */
 class RollingRate {
@@ -51,7 +53,10 @@ class LatencySamples {
 }
 
 function createMetrics(clock) {
+  const loop = monitorEventLoopDelay({ resolution: 20 });
+  loop.enable();
   return {
+    loop,
     startedAt: clock.mono(),
     ingestRate: new RollingRate(clock, 5),
     finalizeToStored: new LatencySamples(1000),
@@ -62,11 +67,18 @@ function createMetrics(clock) {
       spans_invalid: 0,
       rejected_spans: 0,
       clock_skew_spans: 0,
+      requests_by_format: { 'otlp-proto': 0, 'otlp-json': 0, legacy: 0 },
+      unauthorized_requests: 0,
+      rate_limited_requests: 0,
+      ignored_signal_requests: 0,
       // aggregation
       traces_finalized: { hint: 0, settle: 0, timeout: 0, evicted: 0, shutdown: 0 },
       duplicate_spans: 0,
       conflicting_duplicates: 0,
       late_spans: 0,
+      late_spans_merged: 0,
+      late_spans_dropped: 0,
+      late_error_rescued: 0,
       oversized_spans_dropped: 0,
       multi_root_traces: 0,
       // sampling
@@ -94,8 +106,9 @@ function createMetrics(clock) {
 }
 
 /** Assemble the /metrics JSON snapshot from counters plus live gauges. */
-function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
+async function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
   const c = m.c;
+  const [hot, cold] = await Promise.all([repo.safeCount('hot'), repo.safeCount('cold')]);
   return {
     ingestion: {
       spans_received: c.spans_received,
@@ -104,6 +117,10 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       rejected_spans: c.rejected_spans,
       ingest_rate_per_sec: m.ingestRate.rate(),
       clock_skew_spans: c.clock_skew_spans,
+      requests_by_format: { ...c.requests_by_format },
+      unauthorized_requests: c.unauthorized_requests,
+      rate_limited_requests: c.rate_limited_requests,
+      ignored_signal_requests: c.ignored_signal_requests,
     },
     queue: {
       queue_depth: queue.size,
@@ -117,6 +134,9 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       duplicate_spans: c.duplicate_spans,
       conflicting_duplicates: c.conflicting_duplicates,
       late_spans: c.late_spans,
+      late_spans_merged: c.late_spans_merged,
+      late_spans_dropped: c.late_spans_dropped,
+      late_error_rescued: c.late_error_rescued,
       oversized_spans_dropped: c.oversized_spans_dropped,
       multi_root_traces: c.multi_root_traces,
       tombstones: aggregator.tombstoneCount,
@@ -140,12 +160,12 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       breaker_opened_total: c.breaker_opened_total,
     },
     storage: {
-      hot_trace_count: repo.safeCount('hot'),
+      hot_trace_count: hot,
       finalize_to_stored_ms: { p50: m.finalizeToStored.percentile(50), p95: m.finalizeToStored.percentile(95) },
     },
     archive: {
       archived_traces: c.archived_traces,
-      cold_trace_count: repo.safeCount('cold'),
+      cold_trace_count: cold,
       archive_runs: c.archive_runs,
       archive_failures: c.archive_failures,
       archive_retries: c.archive_retries,
@@ -155,7 +175,40 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
     config_version: config.version,
     uptime_s: Math.round((performance.now() - m.startedAt) / 1000),
     memory_rss_mb: Math.round(process.memoryUsage().rss / 1048576),
+    process: processStats(m),
   };
 }
 
-module.exports = { createMetrics, snapshot, RollingRate, LatencySamples };
+/** The collector watching itself: is the event loop keeping up, how much memory is used. */
+function processStats(m) {
+  const mem = process.memoryUsage();
+  const ns = (v) => (Number.isFinite(v) ? Math.round(v / 1e4) / 100 : null); // ns -> ms, 2 dp
+  const out = {
+    event_loop_delay_ms: { p50: ns(m.loop?.percentile(50)), p99: ns(m.loop?.percentile(99)), max: ns(m.loop?.max) },
+    heap_used_mb: Math.round(mem.heapUsed / 1048576),
+    rss_mb: Math.round(mem.rss / 1048576),
+    node_version: process.version,
+  };
+  m.loop?.reset();
+  return out;
+}
+
+/** Flatten a snapshot into Prometheus text exposition format (counters and gauges). */
+function toPrometheus(snap) {
+  const lines = [];
+  const walk = (obj, prefix) => {
+    for (const [k, v] of Object.entries(obj)) {
+      const name = `${prefix}_${k}`.replace(/[^a-zA-Z0-9_]/g, '_');
+      if (typeof v === 'number' && Number.isFinite(v)) lines.push(`${name} ${v}`);
+      else if (typeof v === 'boolean') lines.push(`${name} ${v ? 1 : 0}`);
+      else if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, name);
+    }
+  };
+  walk(snap, 'tracepipe');
+  const states = { queue_state: snap.queue.queue_state, breaker_state: snap.batching.breaker_state };
+  lines.push(`tracepipe_queue_state{state="${states.queue_state}"} 1`);
+  lines.push(`tracepipe_breaker_state{state="${states.breaker_state}"} 1`);
+  return lines.join('\n') + '\n';
+}
+
+module.exports = { createMetrics, snapshot, toPrometheus, RollingRate, LatencySamples };

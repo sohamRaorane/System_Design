@@ -2,27 +2,38 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createApp } = require('./app');
+const { readEnv, productionProblems } = require('./env');
 const { createLogger } = require('./util/common');
 
-const PORT = Number(process.env.PORT || 4318);
-const DB_PATH = process.env.DB_PATH || 'data/telemetry.db';
-const COLD_DIR = process.env.COLD_DIR || 'cold';
-const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, '..', 'config', 'default.json');
-const logger = createLogger(process.env.LOG_LEVEL || 'info');
-
-function main() {
-  let config = {};
-  if (fs.existsSync(CONFIG_PATH)) config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-  const { app, ctx } = createApp({ config, dbPath: DB_PATH, coldDir: COLD_DIR, logger });
+async function main() {
+  const env = readEnv();
+  const logger = createLogger(env.logLevel);
+  const problems = productionProblems(env);
+  if (problems.length) {
+    for (const p of problems) logger.error('config: ' + p);
+    throw new Error('refusing to start in production with an unsafe configuration (see the lines above)');
+  }
+  const configPath = env.configPath || path.join(__dirname, '..', 'config', 'default.json');
+  const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+  const { app, ctx } = await createApp({ env, config, logger });
+  if (ctx.blob.check) {
+    ctx.blob.check().then(() => logger.info('cold archive: object store reachable'))
+      .catch((err) => logger.warn(`cold archive: object store check failed (${err.message}); archiving will retry`));
+  } else if (env.production) {
+    logger.warn('cold archive is on local disk, which Render wipes on restart; set the R2_* variables for durable archives');
+  }
   ctx.start();
-  const server = app.listen(PORT, () => logger.info(`collector listening on http://localhost:${PORT} (db=${DB_PATH}, cold=${COLD_DIR})`));
+  const server = app.listen(env.port, () => logger.info(`collector listening on :${env.port} (db=${env.databaseUrl ? 'postgres' : env.dbPath}, public=${env.publicUrl})`));
+  // Long-lived OTLP keep-alive connections from SDKs: stay above typical proxy idle timeouts.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
 
   let shuttingDown = false;
   const shutdown = async (sig) => {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info(`${sig} received, shutting down`);
-    const force = setTimeout(() => process.exit(1), 10000);
+    const force = setTimeout(() => process.exit(1), 25000);
     server.close();
     server.closeIdleConnections?.();
     try {
@@ -37,9 +48,7 @@ function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-try {
-  main();
-} catch (err) {
-  logger.error(err.message);
+main().catch((err) => {
+  console.error(`[${new Date().toISOString()}] ERROR ${err.message}`);
   process.exit(1);
-}
+});

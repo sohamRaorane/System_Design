@@ -13,7 +13,7 @@ const mkTrace = (id, o = {}) => {
 };
 
 let h;
-before(() => { h = harness({ hash, config: { normal_sampling_rate: 0.1 } }); });
+before(async () => { h = await harness({ hash, config: { normal_sampling_rate: 0.1 } }); });
 after(() => h.cleanup());
 const decide = (t) => h.ctx.sampler.decide(t);
 const cfg = (p) => assert.ok(h.ctx.config.update(p).ok);
@@ -102,7 +102,7 @@ test('T9 valid update bumps version, accepts decimal retention, emits event, If-
 });
 
 test('T9 PUT /v1/config over HTTP, admin token guard', async () => {
-  const hh = harness({});
+  const hh = await harness({});
   hh.ctx.adminToken = '';
   const url = await hh.listen();
   try {
@@ -120,7 +120,7 @@ test('admin token required for PUT when configured', async () => {
   const { createApp } = require('../src/app');
   const os = require('node:os'), path = require('node:path'), fs = require('node:fs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-'));
-  const { app, ctx } = createApp({ dbPath: path.join(dir, 'x.db'), coldDir: path.join(dir, 'c'), adminToken: 'tok' });
+  const { app, ctx } = await createApp({ dbPath: path.join(dir, 'x.db'), coldDir: path.join(dir, 'c'), adminToken: 'tok' });
   const server = await new Promise((r) => { const s = app.listen(0, () => r(s)); });
   const url = `http://127.0.0.1:${server.address().port}`;
   try {

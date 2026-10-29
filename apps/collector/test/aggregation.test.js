@@ -7,15 +7,15 @@ const { harness, span } = require('./helpers');
 let h, agg, kept;
 const hint = (n) => ({ 'trace.expected_spans': n });
 
-function setup(config = {}) {
+async function setup(config = {}) {
+  h = await harness({ config });
   mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
-  h = harness({ config });
   agg = h.ctx.aggregator;
   kept = [];
   const add = h.ctx.batch.add.bind(h.ctx.batch);
   h.ctx.batch.add = (t) => { kept.push(t); add(t); };
 }
-beforeEach(() => setup());
+beforeEach(() => setup({ settle_window_ms: 500 }));
 afterEach(async () => { mock.timers.reset(); await h.cleanup(); });
 
 test('T3 children before root wait; hint met finalizes immediately with sorted spans (E12, E13)', () => {
@@ -132,7 +132,7 @@ test('T7 same span_id in two traces is independent (E20); zero-duration span val
 });
 
 test('T7 oversized trace is truncated and counted (E22)', async () => {
-  await h.cleanup(); mock.timers.reset(); setup({ max_spans_per_trace: 10 });
+  mock.timers.reset(); await h.cleanup(); await setup({ max_spans_per_trace: 10 });
   agg.addSpan(span('big', 'r', null));
   for (let i = 0; i < 14; i++) agg.addSpan(span('big', 'c' + i, 'r'));
   assert.equal(h.ctx.metrics.c.oversized_spans_dropped, 5);
@@ -142,7 +142,7 @@ test('T7 oversized trace is truncated and counted (E22)', async () => {
 });
 
 test('T7 open-trace explosion evicts the oldest as incomplete (E23)', async () => {
-  await h.cleanup(); mock.timers.reset(); setup({ max_open_traces: 100 });
+  mock.timers.reset(); await h.cleanup(); await setup({ max_open_traces: 100 });
   for (let i = 0; i < 150; i++) agg.addSpan(span('x' + i, 's', null, { attrs: hint(2) }));
   assert.equal(agg.openCount, 100);
   assert.equal(h.ctx.metrics.c.traces_finalized.evicted, 50);
@@ -165,4 +165,49 @@ test('tombstones expire; sweep removes them', () => {
   mock.timers.tick(61_000);
   agg.sweepTombstones();
   assert.equal(agg.tombstoneCount, 0);
+});
+
+test('G2 late span of a KEPT trace is merged as a fragment, not dropped', async () => {
+  agg.addSpan(span('lk', 'r', null, { attrs: hint(2), service: 'gateway' }));
+  agg.addSpan(span('lk', 'c', 'r', { service: 'orders' }));
+  assert.equal(kept.length, 1);
+  agg.addSpan(span('lk', 'late', 'c', { service: 'payments' })); // exported 5 s later by another service
+  const m = h.ctx.metrics.c;
+  assert.deepEqual([m.late_spans, m.late_spans_merged, m.late_spans_dropped], [1, 1, 0]);
+  assert.equal(kept.length, 2);
+  const frag = kept[1];
+  assert.equal(frag.trace_id, 'lk');
+  assert.equal(frag.late_fragment, true);
+  assert.equal(frag.sample_reason, kept[0].sample_reason, 'fragment inherits the decision');
+  agg.addSpan(span('lk', 'late', 'c', { service: 'payments' })); // the same late span again
+  assert.equal(m.duplicate_spans, 1, 'a merged late span is remembered as seen');
+
+  // through real storage: the fragment unions into the stored trace
+  await h.ctx.batch.drainAll();
+  const stored = await h.ctx.repo.getHot('default', 'lk');
+  assert.equal(stored.span_count, 3);
+  assert.deepEqual(stored.services, ['gateway', 'orders', 'payments']);
+  assert.equal(stored.is_complete, true, 'a late fragment never downgrades completeness');
+});
+
+test('G2 late span of a DROPPED trace is dropped too; a late ERROR span is rescued', async () => {
+  mock.timers.reset(); await h.cleanup(); await setup({ normal_sampling_rate: 0, settle_window_ms: 500 });
+  const m = h.ctx.metrics.c;
+  agg.addSpan(span('ld', 'r', null, { attrs: hint(1) }));
+  assert.equal(kept.length, 0, 'normal trace dropped by sampling');
+  agg.addSpan(span('ld', 'late-ok', 'r'));
+  assert.deepEqual([m.late_spans, m.late_spans_dropped, kept.length], [1, 1, 0]);
+  agg.addSpan(span('ld', 'late-err', 'r', { status: 'ERROR' }));
+  assert.equal(m.late_error_rescued, 1);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].sample_reason, 'ERROR');
+  assert.equal(kept[0].is_complete, false);
+  agg.addSpan(span('ld', 'late-after', 'late-err'));
+  assert.equal(kept.length, 2, 'spans after the rescue follow the ERROR decision');
+  assert.equal(m.kept_by_reason.ERROR, 1);
+});
+
+test('G2 default settle window outlasts the SDK export interval (5 s)', () => {
+  const { DEFAULTS } = require('../src/config/runtimeConfig');
+  assert.ok(DEFAULTS.settle_window_ms > 5000);
 });

@@ -2,18 +2,27 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { createApp } = require('../src/app');
 const { buildTrace } = require('../src/aggregate/traceBuilder');
 
 /** Isolated pipeline: temp db + cold dir. The pipeline is NOT started (no timers) unless start:true. */
-function harness({ config = {}, hash, start = false, clock } = {}) {
+/** Postgres for the whole suite when TEST_DATABASE_URL is set (CI); each harness gets its own schema. */
+const PG_URL = process.env.TEST_DATABASE_URL || '';
+const usingPostgres = Boolean(PG_URL);
+
+async function harness({ config = {}, hash, start = false, clock, env = {}, ...extra } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-'));
-  const { app, ctx } = createApp({
+  const pg = usingPostgres ? { databaseUrl: PG_URL, env: { ...env, pgSchema: 't_' + crypto.randomBytes(6).toString('hex') } } : { env };
+  const { app, ctx } = await createApp({
     config: { normal_sampling_rate: 1, ...config },
     dbPath: path.join(dir, 'telemetry.db'),
     coldDir: path.join(dir, 'cold'),
+    spillDir: path.join(dir, 'spill'),
     hash,
     clock,
+    ...extra,
+    ...pg,
   });
   if (start) ctx.start();
   let server = null;
@@ -26,6 +35,11 @@ function harness({ config = {}, hash, start = false, clock } = {}) {
     async cleanup() {
       if (server) { server.closeAllConnections?.(); await new Promise((r) => server.close(r)); }
       try { await ctx.shutdown(); } catch { /* already closed */ }
+      if (usingPostgres) {
+        const { PostgresDb } = require('../src/db/postgres');
+        const admin = new PostgresDb(PG_URL, { schema: ctx.env.pgSchema });
+        try { await admin.dropSchema(); } finally { await admin.close(); }
+      }
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };
@@ -60,5 +74,9 @@ function wire(o = {}) {
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
+/** Let pending async storage work (several promise hops) run to completion. */
+async function settle(n = 5) {
+  for (let i = 0; i < n; i++) await tick();
+}
 
-module.exports = { harness, span, fakeTrace, post, wire, tick };
+module.exports = { harness, span, fakeTrace, post, wire, tick, settle, usingPostgres };
