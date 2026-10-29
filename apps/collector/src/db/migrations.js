@@ -87,6 +87,36 @@ CREATE INDEX idx_sessions_user ON sessions (user_id);
 `;
     },
   },
+  {
+    name: '003_projects',
+    sql: (d) => {
+      const t = T(d);
+      return `
+CREATE TABLE projects (
+  id              TEXT PRIMARY KEY,
+  owner_id        TEXT,
+  name            TEXT NOT NULL,
+  settings_json   TEXT NOT NULL,
+  created_at      ${t.big} NOT NULL,
+  first_trace_at  ${t.big},
+  last_span_at    ${t.big}
+);
+CREATE INDEX idx_projects_owner ON projects (owner_id);
+CREATE TABLE api_keys (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL,
+  prefix       TEXT NOT NULL UNIQUE,
+  hash         TEXT NOT NULL,
+  label        TEXT,
+  created_at   ${t.big} NOT NULL,
+  last_used_at ${t.big},
+  revoked_at   ${t.big}
+);
+CREATE INDEX idx_keys_project ON api_keys (project_id);
+INSERT INTO projects (id, owner_id, name, settings_json, created_at) VALUES ('default', NULL, 'Local and demo traffic', '{}', 0)
+`;
+    },
+  },
 ];
 
 /** Split a multi-statement DDL string into single statements (no semicolons inside strings). */
