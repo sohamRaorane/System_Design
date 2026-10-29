@@ -1,14 +1,16 @@
 'use strict';
-// Express app factory: wires every component. All dependencies are injectable so tests
-// can build an isolated pipeline (temp db, fake clock, seeded RNG).
+// App factory: wires every component. All dependencies are injectable so tests can build an
+// isolated pipeline (temp db, fake clock, seeded RNG). Async because opening the database
+// runs migrations.
 const path = require('node:path');
 const express = require('express');
 const { RuntimeConfig } = require('./config/runtimeConfig');
 const { systemClock, silentLogger } = require('./util/common');
 const { createMetrics } = require('./metrics/metrics');
 const { createFaults } = require('./faults/faults');
-const { openDb } = require('./store/db');
+const { openDatabase } = require('./db');
 const { TraceRepo } = require('./store/traceRepo');
+const { LocalBlobStore } = require('./blob/localStore');
 const { SpanQueue } = require('./queue/spanQueue');
 const { Aggregator } = require('./aggregate/aggregator');
 const { Sampler } = require('./sample/sampler');
@@ -21,12 +23,14 @@ const { queryRouter } = require('./query/routes');
 const { controlRouter } = require('./control/routes');
 const { metricsRouter } = require('./metrics/routes');
 
-function createApp({
+async function createApp({
   clock = systemClock,
   config = {},
+  databaseUrl,
   dbPath = 'data/telemetry.db',
   coldDir = 'cold',
-  spillDir = path.join(path.dirname(dbPath), 'spill'),
+  blob,
+  spillDir,
   logger = silentLogger,
   adminToken = process.env.ADMIN_TOKEN || '',
   rng = Math.random,
@@ -35,18 +39,20 @@ function createApp({
   const cfg = config instanceof RuntimeConfig ? config : new RuntimeConfig(config, { logger });
   const metrics = createMetrics(clock);
   const faults = createFaults();
-  const db = openDb(dbPath);
+  const db = await openDatabase({ databaseUrl, dbPath, logger });
+  const blobStore = blob || new LocalBlobStore(coldDir);
   const repo = new TraceRepo({ db, faults, clock, metrics });
   const breaker = new CircuitBreaker({ config: cfg, clock, metrics, logger });
-  const batch = new BatchProcessor({ config: cfg, clock, metrics, repo, breaker, faults, spillDir: dbPath === ':memory:' ? null : spillDir, logger, rng });
+  if (spillDir === undefined) spillDir = databaseUrl || dbPath === ':memory:' ? null : path.join(path.dirname(dbPath), 'spill');
+  const batch = new BatchProcessor({ config: cfg, clock, metrics, repo, breaker, faults, spillDir, logger, rng });
 
-  const ctx = { config: cfg, clock, metrics, faults, db, repo, breaker, batch, logger, adminToken };
+  const ctx = { config: cfg, clock, metrics, faults, db, repo, blob: blobStore, breaker, batch, logger, adminToken };
   // queue <-> aggregator <-> sampler are wired through closures to avoid construction cycles.
   const queue = new SpanQueue({ config: cfg, faults, clock, logger, consumer: (s) => ctx.aggregator.addSpan(s) });
   const sampler = new Sampler({ config: cfg, queue, metrics, hash });
   const aggregator = new Aggregator({ config: cfg, clock, metrics, sampler, sink: batch, logger });
-  const archiver = new ArchiveWorker({ config: cfg, clock, metrics, repo, faults, coldDir, logger });
-  const coldReader = new ColdReader({ repo, metrics });
+  const archiver = new ArchiveWorker({ config: cfg, clock, metrics, repo, faults, blob: blobStore, logger });
+  const coldReader = new ColdReader({ repo, blob: blobStore, metrics });
   Object.assign(ctx, { queue, sampler, aggregator, archiver, coldReader });
 
   const app = express();
@@ -87,11 +93,11 @@ function createApp({
     queue.drainNow();
     aggregator.finalizeAll('shutdown');
     aggregator.stop();
-    const clean = batch.drainAll();
+    const clean = await batch.drainAll();
     batch.stop();
     if (!clean) logger.warn('shutdown: some batches could not be written');
     for (let i = 0; i < 100 && archiver.running; i++) await new Promise((r) => setTimeout(r, 50));
-    db.close();
+    await db.close();
     return clean;
   };
 

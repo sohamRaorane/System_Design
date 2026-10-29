@@ -7,12 +7,11 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
-const Database = require('better-sqlite3');
 const { harness, span, wire, post } = require('./helpers');
 const { Sender } = require('../../../tools/loadgen/railway');
 
 test('T17 shutdown finalizes open traces (cause=shutdown) and stores them before exit (E55)', async () => {
-  const h = harness();
+  const h = await harness();
   const { ctx } = h;
   // an open trace that is still waiting for spans, plus spans still sitting in the queue
   ctx.aggregator.addSpan(span('open1', 'r', null, { attrs: { 'trace.expected_spans': 5 } }));
@@ -21,7 +20,8 @@ test('T17 shutdown finalizes open traces (cause=shutdown) and stores them before
   const clean = await ctx.shutdown();
   assert.equal(clean, true);
   assert.equal(ctx.metrics.c.traces_finalized.shutdown, 1);
-  const db = new Database(path.join(h.dir, 'telemetry.db'), { readonly: true });
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(h.dir, 'telemetry.db'), { readOnly: true });
   const ids = db.prepare('SELECT trace_id, sample_reason, is_complete FROM traces ORDER BY trace_id').all();
   db.close();
   assert.deepEqual(ids.map((r) => r.trace_id), ['inbatch', 'open1', 'queued1']);

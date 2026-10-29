@@ -94,8 +94,9 @@ function createMetrics(clock) {
 }
 
 /** Assemble the /metrics JSON snapshot from counters plus live gauges. */
-function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
+async function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
   const c = m.c;
+  const [hot, cold] = await Promise.all([repo.safeCount('hot'), repo.safeCount('cold')]);
   return {
     ingestion: {
       spans_received: c.spans_received,
@@ -140,12 +141,12 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       breaker_opened_total: c.breaker_opened_total,
     },
     storage: {
-      hot_trace_count: repo.safeCount('hot'),
+      hot_trace_count: hot,
       finalize_to_stored_ms: { p50: m.finalizeToStored.percentile(50), p95: m.finalizeToStored.percentile(95) },
     },
     archive: {
       archived_traces: c.archived_traces,
-      cold_trace_count: repo.safeCount('cold'),
+      cold_trace_count: cold,
       archive_runs: c.archive_runs,
       archive_failures: c.archive_failures,
       archive_retries: c.archive_retries,

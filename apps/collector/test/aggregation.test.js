@@ -7,9 +7,9 @@ const { harness, span } = require('./helpers');
 let h, agg, kept;
 const hint = (n) => ({ 'trace.expected_spans': n });
 
-function setup(config = {}) {
+async function setup(config = {}) {
+  h = await harness({ config });
   mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
-  h = harness({ config });
   agg = h.ctx.aggregator;
   kept = [];
   const add = h.ctx.batch.add.bind(h.ctx.batch);
@@ -132,7 +132,7 @@ test('T7 same span_id in two traces is independent (E20); zero-duration span val
 });
 
 test('T7 oversized trace is truncated and counted (E22)', async () => {
-  await h.cleanup(); mock.timers.reset(); setup({ max_spans_per_trace: 10 });
+  mock.timers.reset(); await h.cleanup(); await setup({ max_spans_per_trace: 10 });
   agg.addSpan(span('big', 'r', null));
   for (let i = 0; i < 14; i++) agg.addSpan(span('big', 'c' + i, 'r'));
   assert.equal(h.ctx.metrics.c.oversized_spans_dropped, 5);
@@ -142,7 +142,7 @@ test('T7 oversized trace is truncated and counted (E22)', async () => {
 });
 
 test('T7 open-trace explosion evicts the oldest as incomplete (E23)', async () => {
-  await h.cleanup(); mock.timers.reset(); setup({ max_open_traces: 100 });
+  mock.timers.reset(); await h.cleanup(); await setup({ max_open_traces: 100 });
   for (let i = 0; i < 150; i++) agg.addSpan(span('x' + i, 's', null, { attrs: hint(2) }));
   assert.equal(agg.openCount, 100);
   assert.equal(h.ctx.metrics.c.traces_finalized.evicted, 50);

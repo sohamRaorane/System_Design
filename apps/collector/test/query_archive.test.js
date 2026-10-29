@@ -8,9 +8,11 @@ const { harness, fakeTrace, span } = require('./helpers');
 
 const DAY = 86400000;
 let h, url;
-before(async () => { h = harness(); url = await h.listen(); });
+before(async () => { h = await harness(); url = await h.listen(); });
 after(() => h.cleanup());
 const get = async (p) => { const r = await fetch(url + p); return { status: r.status, body: await r.json() }; };
+const entryOf = (id) => h.ctx.repo.getArchiveEntry('default', id);
+const fileOf = (entry) => h.ctx.blob.pathOf(entry.object_key);
 
 test('T14 filters, service join, keyset paging, limit cap, bad params', async () => {
   const base = Date.now() - 1000;
@@ -23,7 +25,7 @@ test('T14 filters, service join, keyset paging, limit cap, bad params', async ()
     ];
     traces.push(fakeTrace('q' + String(i).padStart(2, '0'), { spans, reason: err ? 'ERROR' : slow ? 'HIGH_LATENCY' : 'NORMAL_SAMPLED', status: err ? 'ERROR' : 'OK', finalized: base + i }));
   }
-  h.ctx.repo.insertBatch(traces);
+  await h.ctx.repo.insertBatch(traces);
 
   assert.equal((await get('/v1/traces?status=ERROR&limit=200')).body.items.length, 10);
   const pay = (await get('/v1/traces?service=payment&limit=200')).body.items;
@@ -32,6 +34,7 @@ test('T14 filters, service join, keyset paging, limit cap, bad params', async ()
   assert.ok(slowPay.length > 0 && slowPay.every((t) => t.duration_ms >= 2000));
   assert.equal((await get('/v1/traces?reason=HIGH_LATENCY&limit=200')).body.items.every((t) => t.sample_reason === 'HIGH_LATENCY'), true);
   assert.ok(!('spans_json' in (await get('/v1/traces?limit=1')).body.items[0]), 'summaries only');
+  assert.equal((await get('/v1/traces?project=someone-else&limit=200')).body.items.length, 0, 'other projects see nothing');
 
   // keyset paging: no gaps/dupes, newest first
   const seen = [];
@@ -48,10 +51,10 @@ test('T14 filters, service join, keyset paging, limit cap, bad params', async ()
 
   // E52 cap, E51 bad params
   assert.equal((await get('/v1/traces?limit=100000')).body.items.length, 30);
-  for (const bad of ['limit=abc', 'min_duration_ms=-1', "service='; DROP TABLE traces;--&status=NOPE", 'cursor=%%%', 'cursor=' + Buffer.from('x:y;z').toString('base64url'), 'from=1.5', 'status=ERROR%27%20OR%201=1']) {
+  for (const bad of ['limit=abc', 'min_duration_ms=-1', "service='; DROP TABLE traces;--&status=NOPE", 'cursor=%%%', 'cursor=' + Buffer.from('x:y;z').toString('base64url'), 'from=1.5', 'status=ERROR%27%20OR%201=1', 'project=bad%20id']) {
     assert.equal((await get('/v1/traces?' + bad)).status, 400, bad);
   }
-  assert.equal(h.ctx.repo.safeCount('hot'), 30, 'table intact');
+  assert.equal(await h.ctx.repo.safeCount('hot'), 30, 'table intact');
 });
 
 test('T14 GET by id: hot / in_flight / pending / 404 / 400', async () => {
@@ -66,30 +69,32 @@ test('T14 GET by id: hot / in_flight / pending / 404 / 400', async () => {
   assert.equal((await get('/v1/traces/missing')).status, 404);
   assert.equal((await get('/v1/traces/' + encodeURIComponent('bad id!'))).status, 400);
   aggregator.finalizeAll();
-  batch.drainAll();
+  await batch.drainAll();
 });
 
 async function archiveSetup(ids) {
   const old = Date.now() - 3 * DAY;
   h.ctx.config.update({ hot_retention_days: 1 });
-  h.ctx.repo.insertBatch(ids.map((id, i) => fakeTrace(id, { finalized: old + i, reason: 'ERROR', status: 'ERROR' })));
+  await h.ctx.repo.insertBatch(ids.map((id, i) => fakeTrace(id, { finalized: old + i, reason: 'ERROR', status: 'ERROR' })));
 }
 
 test('T15 aged traces are archived, indexed, removed from hot, readable as cold (scenario 8)', async () => {
   await archiveSetup(['arc1', 'arc2']);
   const res = await h.ctx.archiver.runOnce();
   assert.deepEqual([res.ok, res.archived], [true, 2]);
-  assert.equal(h.ctx.repo.getHot('arc1'), null);
-  const entry = h.ctx.repo.getArchiveEntry('arc1');
-  assert.match(entry.file_path.replace(/\\/g, '/'), /cold\/\d{4}-\d{2}-\d{2}\/batch-.*\.json\.gz$/);
-  assert.ok(fs.existsSync(entry.file_path));
+  assert.equal(await h.ctx.repo.getHot('default', 'arc1'), null);
+  const entry = await entryOf('arc1');
+  assert.match(entry.object_key, /^\d{4}-\d{2}-\d{2}\/batch-.*\.json\.gz$/);
+  assert.ok(fs.existsSync(fileOf(entry)));
   const r = await get('/v1/traces/arc1');
   assert.equal(r.body.source, 'cold');
   assert.equal(r.body.trace.trace_id, 'arc1');
   assert.equal(h.ctx.metrics.c.archived_traces, 2);
   const withArchive = await get('/v1/traces?status=ERROR&include_archived=true&limit=200');
   assert.ok(withArchive.body.archived.some((t) => t.trace_id === 'arc2'));
-  assert.equal(fs.readdirSync(path.dirname(entry.file_path)).filter((f) => f.endsWith('.tmp')).length, 0);
+  const bySvc = await get('/v1/traces?service=gateway&include_archived=true&limit=200');
+  assert.ok(bySvc.body.archived.some((t) => t.trace_id === 'arc2'), 'archived search matches any service, not just the root');
+  assert.equal(fs.readdirSync(path.dirname(fileOf(entry))).filter((f) => f.endsWith('.tmp')).length, 0);
 });
 
 test('T16 archive_down leaves hot rows; later run archives them (scenario 8)', async () => {
@@ -99,25 +104,24 @@ test('T16 archive_down leaves hot rows; later run archives them (scenario 8)', a
   assert.equal(res.ok, false);
   assert.equal(h.ctx.metrics.c.archive_failures, 1);
   assert.equal(h.ctx.metrics.c.archive_retries, 1);
-  assert.ok(h.ctx.repo.getHot('fail1'), 'hot row untouched');
+  assert.ok(await h.ctx.repo.getHot('default', 'fail1'), 'hot row untouched');
   assert.equal((await get('/v1/traces/fail1')).body.source, 'hot');
   h.ctx.faults.update({ archive_down: false });
   assert.equal((await h.ctx.archiver.runOnce()).archived, 1);
   assert.equal((await get('/v1/traces/fail1')).body.source, 'cold');
 });
 
-test('T16 crash after rename, before hot delete: next run rewrites; index points at newer file (E47)', async () => {
+test('T16 crash after upload, before hot delete: next run rewrites; index points at newer object (E47)', async () => {
   await archiveSetup(['crash1']);
   const { archiver } = h.ctx;
-  const realDelete = archiver.deleteHot;
-  archiver.deleteHot = { run() { throw new Error('simulated crash'); } };
+  archiver.hooks.beforeDelete = () => { throw new Error('simulated crash'); };
   assert.equal((await archiver.runOnce()).ok, false);
-  archiver.deleteHot = realDelete;
-  assert.ok(h.ctx.repo.getHot('crash1'), 'still hot');
-  assert.equal(h.ctx.repo.getArchiveEntry('crash1'), null, 'index transaction rolled back');
+  archiver.hooks.beforeDelete = undefined;
+  assert.ok(await h.ctx.repo.getHot('default', 'crash1'), 'still hot');
+  assert.equal(await entryOf('crash1'), null, 'index transaction rolled back');
   assert.equal((await archiver.runOnce()).archived, 1);
-  const entry = h.ctx.repo.getArchiveEntry('crash1');
-  const dayDir = path.dirname(entry.file_path);
+  const entry = await entryOf('crash1');
+  const dayDir = path.dirname(fileOf(entry));
   assert.equal(fs.readdirSync(dayDir).filter((f) => f.startsWith('batch-')).length >= 2, true, 'harmless older duplicate');
   assert.equal((await get('/v1/traces/crash1')).body.source, 'cold');
 });
@@ -130,20 +134,19 @@ test('T16 leftover .tmp files deleted at startup (E48)', () => {
   assert.equal(fs.existsSync(path.join(dir, '.batch-1.json.gz.tmp')), false);
 });
 
-test('T16 corrupt or missing cold file -> 404 archive_error, server keeps running (E49)', async () => {
+test('T16 corrupt or missing cold object -> 404 archive_error, server keeps running (E49)', async () => {
   await archiveSetup(['corrupt1', 'missing1']);
-  const { archiver, repo, coldReader } = h.ctx;
-  // archive each in its own run so they land in separate files
-  h.ctx.db.prepare("UPDATE traces SET finalized_at = finalized_at - 5*86400000 WHERE trace_id='missing1'").run();
+  const { archiver, coldReader } = h.ctx;
+  await h.ctx.db.run("UPDATE traces SET finalized_at = finalized_at - 5*86400000 WHERE trace_id = 'missing1'");
   await archiver.runOnce();
-  const file = repo.getArchiveEntry('corrupt1').file_path;
+  const file = fileOf(await entryOf('corrupt1'));
   coldReader.cache.clear();
   fs.writeFileSync(file, 'not gzip at all');
   const r = await get('/v1/traces/corrupt1');
   assert.equal(r.status, 404);
   assert.match(r.body.archive_error, /archive_error/);
   assert.ok(h.ctx.metrics.c.cold_read_errors >= 1);
-  fs.rmSync(repo.getArchiveEntry('missing1').file_path, { force: true });
+  fs.rmSync(fileOf(await entryOf('missing1')), { force: true });
   coldReader.cache.clear();
   assert.equal((await get('/v1/traces/missing1')).status, 404);
   assert.equal((await fetch(url + '/health')).status, 200);
@@ -152,8 +155,18 @@ test('T16 corrupt or missing cold file -> 404 archive_error, server keeps runnin
 test('E50 backlog drains at archive_batch_size per run', async () => {
   const old = Date.now() - 10 * DAY;
   h.ctx.config.update({ hot_retention_days: 1, archive_batch_size: 3 });
-  h.ctx.repo.insertBatch(Array.from({ length: 7 }, (_, i) => fakeTrace('bl' + i, { finalized: old + i })));
+  await h.ctx.repo.insertBatch(Array.from({ length: 7 }, (_, i) => fakeTrace('bl' + i, { finalized: old + i })));
   assert.equal((await h.ctx.archiver.runOnce()).archived, 3);
   assert.equal((await h.ctx.archiver.runOnce()).archived, 3);
   assert.equal((await h.ctx.archiver.runOnce()).archived, 1);
+});
+
+test('cold retention purge removes old day folders and their index rows', async () => {
+  const veryOld = Date.now() - 200 * DAY;
+  h.ctx.config.update({ hot_retention_days: 1, cold_retention_days: 90, archive_batch_size: 1000 });
+  await h.ctx.repo.insertBatch([fakeTrace('ancient', { finalized: veryOld })]);
+  await h.ctx.archiver.runOnce(); // archives, then purges the 200-day-old folder in the same run
+  assert.equal(await entryOf('ancient'), null);
+  const day = new Date(veryOld).toISOString().slice(0, 10);
+  assert.equal(fs.existsSync(path.join(h.dir, 'cold', day)), false);
 });

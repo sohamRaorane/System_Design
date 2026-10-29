@@ -8,6 +8,9 @@ const TOMBSTONE_SWEEP_MS = 5000;
 const TOMBSTONE_MIN_TTL_MS = 60000;
 const MAX_TOMBSTONES = 200000;
 
+/** Traces are isolated per project: the same trace_id in two projects never merges. */
+const keyOf = (projectId, traceId) => (projectId || 'default') + '\0' + traceId;
+
 class Aggregator {
   constructor({ config, clock, metrics, sampler, sink, logger }) {
     this.config = config;
@@ -16,8 +19,8 @@ class Aggregator {
     this.sampler = sampler;
     this.sink = sink; // { add(trace) }
     this.logger = logger;
-    this.open = new Map();
-    this.tombstones = new Map(); // trace_id -> { spanIds:Set, expiresAt }
+    this.open = new Map(); // key(project, trace) -> Entry
+    this.tombstones = new Map(); // key(project, trace) -> { spanIds:Set, expiresAt, kept, reason }
     this.sweepTimer = null;
   }
 
@@ -44,24 +47,27 @@ class Aggregator {
     const cfg = this.config.get();
 
     // 1. Tombstone check: the trace was finalized recently.
-    const tomb = this.tombstones.get(span.trace_id);
+    const key = keyOf(span.project_id, span.trace_id);
+    const tomb = this.tombstones.get(key);
     if (tomb) {
       if (tomb.expiresAt > this.clock.now()) {
         if (tomb.spanIds.has(span.span_id)) c.duplicate_spans++;
         else c.late_spans++;
         return;
       }
-      this.tombstones.delete(span.trace_id);
+      this.tombstones.delete(key);
     }
 
     // 2. Get or create the entry.
-    let entry = this.open.get(span.trace_id);
+    let entry = this.open.get(key);
     if (!entry) {
       if (this.open.size >= cfg.max_open_traces) {
         const oldest = this.open.values().next().value;
         this.finalize(oldest, 'evicted');
       }
       entry = {
+        key,
+        projectId: span.project_id || 'default',
         traceId: span.trace_id,
         spans: new Map(),
         firstSeenAt: this.clock.now(),
@@ -74,7 +80,7 @@ class Aggregator {
       };
       // Deadline is fixed at creation; later config changes affect new traces only (E25).
       entry.timeoutTimer = unref(setTimeout(() => this.finalize(entry, 'timeout'), cfg.trace_timeout_ms));
-      this.open.set(span.trace_id, entry);
+      this.open.set(key, entry);
     }
 
     // 3. Duplicate check (key is the pair trace_id + span_id, E20).
@@ -118,14 +124,15 @@ class Aggregator {
   }
 
   finalize(entry, cause) {
-    if (this.open.get(entry.traceId) !== entry) return; // already finalized
+    if (this.open.get(entry.key) !== entry) return; // already finalized
     clearTimeout(entry.timeoutTimer);
     clearTimeout(entry.settleTimer);
-    this.open.delete(entry.traceId);
+    this.open.delete(entry.key);
 
     const verdict = evaluate(entry);
     const isComplete = (cause === 'hint' || cause === 'settle') && verdict !== 'none';
     const trace = buildTrace([...entry.spans.values()], {
+      project_id: entry.projectId,
       trace_id: entry.traceId,
       rootSpanId: entry.rootSpanId,
       is_complete: isComplete,
@@ -136,22 +143,28 @@ class Aggregator {
     // Monotonic timestamp for the finalize-to-stored latency metric (not serialized).
     Object.defineProperty(trace, '_finMono', { value: this.clock.mono(), enumerable: false, writable: true });
 
-    this._writeTombstone(entry);
     this.metrics.c.traces_finalized[cause] = (this.metrics.c.traces_finalized[cause] || 0) + 1;
 
     const decision = this.sampler.decide(trace);
+    this._writeTombstone(entry, decision);
     if (decision.keep) {
       trace.sampled = true;
       trace.sample_reason = decision.reason;
       this.sink.add(trace);
     }
+    this.onFinalized?.(trace, decision);
     return trace;
   }
 
-  _writeTombstone(entry) {
+  _writeTombstone(entry, decision = { keep: false, reason: null }) {
     const ttl = Math.max(2 * this.config.get().trace_timeout_ms, TOMBSTONE_MIN_TTL_MS);
-    this.tombstones.delete(entry.traceId); // re-insert at the end (newest)
-    this.tombstones.set(entry.traceId, { spanIds: new Set(entry.spans.keys()), expiresAt: this.clock.now() + ttl });
+    this.tombstones.delete(entry.key); // re-insert at the end (newest)
+    this.tombstones.set(entry.key, {
+      spanIds: new Set(entry.spans.keys()),
+      expiresAt: this.clock.now() + ttl,
+      kept: decision.keep,
+      reason: decision.reason,
+    });
     while (this.tombstones.size > MAX_TOMBSTONES) {
       this.tombstones.delete(this.tombstones.keys().next().value);
     }
@@ -163,10 +176,11 @@ class Aggregator {
   }
 
   /** Partial view of an open trace, for GET /v1/traces/:id (source: in_flight). */
-  peek(traceId) {
-    const entry = this.open.get(traceId);
+  peek(projectId, traceId) {
+    const entry = this.open.get(keyOf(projectId, traceId));
     if (!entry) return null;
     return buildTrace([...entry.spans.values()], {
+      project_id: entry.projectId,
       trace_id: entry.traceId,
       rootSpanId: entry.rootSpanId,
       is_complete: false,
@@ -182,4 +196,4 @@ class Aggregator {
   }
 }
 
-module.exports = { Aggregator };
+module.exports = { Aggregator, keyOf };

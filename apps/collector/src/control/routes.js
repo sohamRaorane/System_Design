@@ -26,12 +26,12 @@ function controlRouter({ config, faults, batch, archiver, adminToken }) {
   router.put('/v1/faults', guard, jsonBody, (req, res) => {
     const result = faults.update(req.body);
     if (!result.ok) return res.status(400).json({ error: 'invalid_faults', errors: result.errors });
-    if (!result.faults.storage_down) batch.flush();
+    if (!result.faults.storage_down) batch.flush().catch(() => {});
     res.json({ faults: result.faults });
   });
 
-  router.post('/v1/admin/flush', guard, (req, res) => {
-    batch.flush();
+  router.post('/v1/admin/flush', guard, async (req, res) => {
+    await batch.flush();
     res.json({ ok: true, pending_batches: batch.pendingCount });
   });
 

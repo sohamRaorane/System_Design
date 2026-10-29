@@ -28,7 +28,7 @@ Planned (later phases): `apps/web` (React + Vite), `packages/shared`, `examples/
 
 ## Quick start
 
-Requires Node.js 20.4+ (22 recommended).
+Requires Node.js 22.13 or newer (the collector uses the built-in `node:sqlite`; no native build step).
 
 ```bash
 npm install

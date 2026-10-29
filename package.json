@@ -8,7 +8,7 @@
     "tools/*"
   ],
   "engines": {
-    "node": ">=20.4"
+    "node": ">=22.13"
   },
   "scripts": {
     "start": "npm run start -w @system-design/collector",
