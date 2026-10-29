@@ -1,0 +1,23 @@
+{
+  "name": "telemetry-collector",
+  "version": "1.0.0",
+  "description": "Group 21 — distributed tracing & telemetry collector (single-process MVP)",
+  "main": "src/server.js",
+  "private": true,
+  "engines": {
+    "node": ">=20.4"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "loadgen": "node loadgen/railway.js --rate 20 --duration 60",
+    "loadgen:burst": "node loadgen/railway.js --burst 15000",
+    "reconcile": "node scripts/reconcile.js",
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+    "reset": "node scripts/reset.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "express": "^5.1.0"
+  }
+}
