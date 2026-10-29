@@ -62,6 +62,10 @@ function createMetrics(clock) {
       spans_invalid: 0,
       rejected_spans: 0,
       clock_skew_spans: 0,
+      requests_by_format: { 'otlp-proto': 0, 'otlp-json': 0, legacy: 0 },
+      unauthorized_requests: 0,
+      rate_limited_requests: 0,
+      ignored_signal_requests: 0,
       // aggregation
       traces_finalized: { hint: 0, settle: 0, timeout: 0, evicted: 0, shutdown: 0 },
       duplicate_spans: 0,
@@ -105,6 +109,10 @@ async function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) 
       rejected_spans: c.rejected_spans,
       ingest_rate_per_sec: m.ingestRate.rate(),
       clock_skew_spans: c.clock_skew_spans,
+      requests_by_format: { ...c.requests_by_format },
+      unauthorized_requests: c.unauthorized_requests,
+      rate_limited_requests: c.rate_limited_requests,
+      ignored_signal_requests: c.ignored_signal_requests,
     },
     queue: {
       queue_depth: queue.size,
