@@ -14,6 +14,7 @@
     "reset": "node scripts/reset.js"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "pg": "^8.13.1"
   }
 }

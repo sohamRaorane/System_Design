@@ -7,7 +7,9 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
-const { harness, span, wire, post } = require('./helpers');
+const crypto = require('node:crypto');
+const { harness, span, wire, post, usingPostgres } = require('./helpers');
+const { PostgresDb } = require('../src/db/postgres');
 const { Sender } = require('../../../tools/loadgen/railway');
 
 test('T17 shutdown finalizes open traces (cause=shutdown) and stores them before exit (E55)', async () => {
@@ -20,10 +22,18 @@ test('T17 shutdown finalizes open traces (cause=shutdown) and stores them before
   const clean = await ctx.shutdown();
   assert.equal(clean, true);
   assert.equal(ctx.metrics.c.traces_finalized.shutdown, 1);
-  const { DatabaseSync } = require('node:sqlite');
-  const db = new DatabaseSync(path.join(h.dir, 'telemetry.db'), { readOnly: true });
-  const ids = db.prepare('SELECT trace_id, sample_reason, is_complete FROM traces ORDER BY trace_id').all();
-  db.close();
+  let ids;
+  if (usingPostgres) {
+    const db = new PostgresDb(process.env.TEST_DATABASE_URL, { schema: ctx.env.pgSchema });
+    ids = await db.all('SELECT trace_id, sample_reason, is_complete FROM traces ORDER BY trace_id');
+    await db.dropSchema();
+    await db.close();
+  } else {
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(path.join(h.dir, 'telemetry.db'), { readOnly: true });
+    ids = db.prepare('SELECT trace_id, sample_reason, is_complete FROM traces ORDER BY trace_id').all();
+    db.close();
+  }
   assert.deepEqual(ids.map((r) => r.trace_id), ['inbatch', 'open1', 'queued1']);
   assert.equal(ids.find((r) => r.trace_id === 'open1').sample_reason, 'INCOMPLETE');
   fs.rmSync(h.dir, { recursive: true, force: true });
@@ -43,7 +53,9 @@ test('T18 SIGKILL then restart: every stored trace survives (E56, scenario 1)', 
   const port = 4400 + Math.floor(Math.random() * 500);
   const cfgPath = path.join(dir, 'cfg.json');
   fs.writeFileSync(cfgPath, JSON.stringify({ normal_sampling_rate: 1, batch_flush_interval_ms: 100 }));
-  const env = { ...process.env, PORT: String(port), DB_PATH: path.join(dir, 'd', 't.db'), COLD_DIR: path.join(dir, 'cold'), CONFIG_PATH: cfgPath, LOG_LEVEL: 'error' };
+  const schema = 't_' + crypto.randomBytes(6).toString('hex');
+  const env = { ...process.env, PORT: String(port), DB_PATH: path.join(dir, 'd', 't.db'), COLD_DIR: path.join(dir, 'cold'), CONFIG_PATH: cfgPath, LOG_LEVEL: 'error',
+    ...(usingPostgres ? { DATABASE_URL: process.env.TEST_DATABASE_URL, PG_SCHEMA: schema } : {}) };
   const url = `http://127.0.0.1:${port}`;
   const start = () => spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], { env, stdio: 'ignore' });
 
@@ -71,6 +83,7 @@ test('T18 SIGKILL then restart: every stored trace survives (E56, scenario 1)', 
     child.kill('SIGKILL');
     await new Promise((r) => setTimeout(r, 300));
     fs.rmSync(dir, { recursive: true, force: true });
+    if (usingPostgres) { const db = new PostgresDb(process.env.TEST_DATABASE_URL, { schema }); await db.dropSchema(); await db.close(); }
   }
 });
 

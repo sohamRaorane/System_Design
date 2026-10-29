@@ -3,7 +3,15 @@
 const { test, afterEach, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { harness, fakeTrace, span, settle } = require('./helpers');
+const { harness, fakeTrace, span, tick } = require('./helpers');
+
+/** Let the async writer finish whatever it started (works for in-process SQLite and networked Postgres). */
+async function settle(rounds = 20) {
+  for (let i = 0; i < rounds; i++) {
+    await tick();
+    if (batch?.writing) await batch.writing.catch(() => {});
+  }
+}
 
 let h, batch, repo;
 async function setup(config = {}) {

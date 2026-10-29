@@ -1,0 +1,71 @@
+# Render Blueprint: New > Blueprint > pick this repository.
+# Free web services sleep after 15 minutes without traffic and take ~1 minute to wake
+# (see docs/adr/002-hosting-render-free-neon-r2.md). Fill the "sync: false" values in the
+# Render dashboard; see docs/deployment.md for where each one comes from.
+services:
+  - type: web
+    name: tracepipe-collector
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: apps/collector
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    startCommand: node src/server.js
+    healthCheckPath: /livez
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: LOG_LEVEL
+        value: info
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: DATABASE_URL          # Neon connection string (sslmode=require)
+        sync: false
+      - key: JWT_PRIVATE_KEY       # npm run secrets
+        sync: false
+      - key: WEB_ORIGIN            # https://<your-app>.vercel.app
+        sync: false
+      - key: ADMIN_GITHUB_LOGINS   # your GitHub login(s), comma-separated
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_APP_SLUG
+        sync: false
+      - key: GITHUB_APP_PRIVATE_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+
+  # The demo app that proves the pipeline end to end. Optional.
+  - type: web
+    name: tracepipe-demo-shop
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: examples/demo-shop
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT   # https://tracepipe-collector.onrender.com
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS    # x-api-key=otk_...
+        sync: false
+      - key: OTEL_PIPELINE_VERIFY_TOKEN    # from the Load test page, to allow load tests
+        sync: false
