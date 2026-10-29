@@ -30,7 +30,7 @@ At the end of each phase: open a PR `dev → main`, attach the gate demo checkli
 
 ## Local setup
 ```bash
-nvm use            # Node 22 (see .nvmrc)
+nvm use            # Node 22.13+ (see .nvmrc)
 npm install
 cp .env.example .env
 npm test

@@ -6,16 +6,16 @@ const { snapshot } = require('./metrics');
 function metricsRouter(ctx) {
   const router = express.Router();
 
-  router.get('/metrics', (req, res) => res.json(snapshot(ctx.metrics, ctx)));
+  router.get('/metrics', async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
 
-  router.get('/health', (req, res) => {
+  router.get('/health', async (req, res) => {
     const reasons = [];
-    if (ctx.breaker.state === 'open') reasons.push('circuit breaker open');
+    if (ctx.breaker.state === 'open') reasons.push('circuit breaker open (storage writes paused)');
     if (ctx.queue.state === 'FULL') reasons.push('queue at hard limit');
     try {
-      ctx.repo.ping();
+      await ctx.repo.ping();
     } catch (err) {
-      reasons.push('sqlite unreachable: ' + err.message);
+      reasons.push('database unreachable: ' + err.message);
     }
     if (reasons.length) return res.status(503).json({ status: 'unhealthy', reasons });
     res.json({ status: 'ok' });

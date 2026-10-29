@@ -6,14 +6,15 @@ const { createApp } = require('../src/app');
 const { buildTrace } = require('../src/aggregate/traceBuilder');
 
 /** Isolated pipeline: temp db + cold dir. The pipeline is NOT started (no timers) unless start:true. */
-function harness({ config = {}, hash, start = false, clock } = {}) {
+async function harness({ config = {}, hash, start = false, clock, ...extra } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-'));
-  const { app, ctx } = createApp({
+  const { app, ctx } = await createApp({
     config: { normal_sampling_rate: 1, ...config },
     dbPath: path.join(dir, 'telemetry.db'),
     coldDir: path.join(dir, 'cold'),
     hash,
     clock,
+    ...extra,
   });
   if (start) ctx.start();
   let server = null;
@@ -60,5 +61,9 @@ function wire(o = {}) {
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
+/** Let pending async storage work (several promise hops) run to completion. */
+async function settle(n = 5) {
+  for (let i = 0; i < n; i++) await tick();
+}
 
-module.exports = { harness, span, fakeTrace, post, wire, tick };
+module.exports = { harness, span, fakeTrace, post, wire, tick, settle };

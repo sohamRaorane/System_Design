@@ -44,6 +44,7 @@ function ingestRouter({ queue, config, metrics, faults, clock }) {
           for (const e of r.errors) errors.push({ index, ...e });
         } else {
           if (r.skewed) metrics.c.clock_skew_spans++;
+          r.span.project_id = 'default';
           accepted.push(r.span);
         }
       });

@@ -10,19 +10,19 @@ const COLD_DIR = process.env.COLD_DIR || 'cold';
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, '..', 'config', 'default.json');
 const logger = createLogger(process.env.LOG_LEVEL || 'info');
 
-function main() {
+async function main() {
   let config = {};
   if (fs.existsSync(CONFIG_PATH)) config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-  const { app, ctx } = createApp({ config, dbPath: DB_PATH, coldDir: COLD_DIR, logger });
+  const { app, ctx } = await createApp({ config, databaseUrl: process.env.DATABASE_URL, dbPath: DB_PATH, coldDir: COLD_DIR, logger });
   ctx.start();
-  const server = app.listen(PORT, () => logger.info(`collector listening on http://localhost:${PORT} (db=${DB_PATH}, cold=${COLD_DIR})`));
+  const server = app.listen(PORT, () => logger.info(`collector listening on http://localhost:${PORT} (db=${process.env.DATABASE_URL ? 'postgres' : DB_PATH})`));
 
   let shuttingDown = false;
   const shutdown = async (sig) => {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info(`${sig} received, shutting down`);
-    const force = setTimeout(() => process.exit(1), 10000);
+    const force = setTimeout(() => process.exit(1), 25000);
     server.close();
     server.closeIdleConnections?.();
     try {
@@ -37,9 +37,7 @@ function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   logger.error(err.message);
   process.exit(1);
-}
+});
