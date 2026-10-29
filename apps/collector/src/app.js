@@ -29,6 +29,8 @@ const { authMiddleware } = require('./auth/middleware');
 const { authRouter } = require('./auth/routes');
 const { GitHubClient } = require('./github/client');
 const { githubRouter } = require('./github/routes');
+const { LoadTestManager } = require('./loadtest/manager');
+const { loadtestRouter } = require('./loadtest/routes');
 const { ingestRouter } = require('./ingest/routes');
 const { queryRouter } = require('./query/routes');
 const { controlRouter } = require('./control/routes');
@@ -81,7 +83,11 @@ async function createApp({
   const ctx = { env, config: cfg, clock, metrics, faults, db, repo, accounts, projects, projectService, blob: blobStore, breaker, batch, logger, jwt, box, github };
   ctx.auth = authMiddleware(ctx);
   ctx.resolveIngestProject = (req) => projectService.resolve(req);
-  ctx.onSpansAccepted = (projectId, spans) => projectService.onSpansAccepted(projectId, spans);
+  ctx.loadtests = new LoadTestManager(ctx);
+  ctx.onSpansAccepted = (projectId, spans) => {
+    projectService.onSpansAccepted(projectId, spans);
+    ctx.loadtests.noteSpans(projectId, spans);
+  };
   // queue <-> aggregator <-> sampler are wired through closures to avoid construction cycles.
   const queue = new SpanQueue({ config: cfg, faults, clock, logger, consumer: (s) => ctx.aggregator.addSpan(s) });
   const sampler = new Sampler({ config: cfg, queue, metrics, hash, overrides: (pid) => projectService.overrides(pid) });
@@ -102,6 +108,7 @@ async function createApp({
   app.use(authRouter(ctx));
   app.use(projectsRouter(ctx));
   app.use(githubRouter(ctx));
+  app.use(loadtestRouter(ctx));
   app.use(queryRouter(ctx, { guard: ctx.auth.operatorGuard }));
   app.use(controlRouter(ctx));
   app.use(metricsRouter(ctx));
@@ -137,6 +144,7 @@ async function createApp({
     if (closed) return;
     closed = true;
     for (const t of timers) clearInterval(t);
+    ctx.loadtests.stopAll();
     queue.stop();
     archiver.stop();
     queue.drainNow();
