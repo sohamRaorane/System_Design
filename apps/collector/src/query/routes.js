@@ -47,9 +47,10 @@ function parseFilters(q) {
 }
 
 /** List traces of one project (hot, optionally plus archived summaries). */
-async function listTraces(ctx, projectId, q, res) {
-  const { filters, errors } = parseFilters(q);
+async function listTraces(ctx, projectId, q, res, extra = {}) {
+  const { filters: parsed, errors } = parseFilters(q);
   if (errors.length) return res.status(400).json({ error: 'invalid_query', errors });
+  const filters = { ...parsed, ...extra };
   try {
     const result = await ctx.repo.query(projectId, filters);
     if (q.include_archived === 'true') result.archived = await ctx.repo.queryArchived(projectId, filters, filters.limit ?? 50);
