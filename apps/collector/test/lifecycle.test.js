@@ -9,7 +9,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const Database = require('better-sqlite3');
 const { harness, span, wire, post } = require('./helpers');
-const { Sender } = require('../loadgen/railway');
+const { Sender } = require('../../../tools/loadgen/railway');
 
 test('T17 shutdown finalizes open traces (cause=shutdown) and stores them before exit (E55)', async () => {
   const h = harness();

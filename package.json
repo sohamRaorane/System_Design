@@ -1,23 +1,22 @@
 {
-  "name": "telemetry-collector",
-  "version": "1.0.0",
-  "description": "Group 21 — distributed tracing & telemetry collector (single-process MVP)",
-  "main": "src/server.js",
+  "name": "system-design",
+  "version": "0.1.0",
   "private": true,
+  "description": "Group 21 — OpenTelemetry pipeline with tail-based sampling, batch indexing and cold archival",
+  "workspaces": [
+    "apps/*",
+    "tools/*"
+  ],
   "engines": {
     "node": ">=20.4"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "loadgen": "node loadgen/railway.js --rate 20 --duration 60",
-    "loadgen:burst": "node loadgen/railway.js --burst 15000",
-    "reconcile": "node scripts/reconcile.js",
-    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
-    "reset": "node scripts/reset.js"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.4.1",
-    "express": "^5.1.0"
+    "start": "npm run start -w @system-design/collector",
+    "dev": "npm run dev -w @system-design/collector",
+    "test": "npm test --workspaces --if-present",
+    "reset": "npm run reset -w @system-design/collector",
+    "loadgen": "npm run loadgen -w @system-design/loadgen",
+    "loadgen:burst": "npm run loadgen:burst -w @system-design/loadgen",
+    "reconcile": "npm run reconcile -w @system-design/loadgen"
   }
 }

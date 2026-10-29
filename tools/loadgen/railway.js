@@ -2,8 +2,8 @@
 // Railway Reservation load generator.
 //   node loadgen/railway.js --rate 20 --duration 60 [--mix error=5,slow=5,success=90] [--seed 42]
 //   node loadgen/railway.js --burst 15000
-const { mulberry32 } = require('../src/util/common');
-const { hashToUnit } = require('../src/sample/sampler');
+const { mulberry32 } = require('../../apps/collector/src/util/common');
+const { hashToUnit } = require('../../apps/collector/src/sample/sampler');
 const { DEFAULT_MIX, TYPES, pickType, parseMix, buildTrace } = require('./scenarios');
 
 const MAX_BATCH = 50;

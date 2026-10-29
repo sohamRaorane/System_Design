@@ -1,8 +1,8 @@
 'use strict';
 // End-to-end reconciliation (section 9.3). Run against a freshly reset, running collector:
 //   npm run reset && npm start        (in another terminal)
-//   node scripts/reconcile.js [--duration 120] [--wait 40] [--url http://localhost:4318] [--storage-outage]
-const { runSteady, parseArgs } = require('../loadgen/railway');
+//   npm run reconcile --  [--duration 120] [--wait 40] [--url http://localhost:4318] [--storage-outage]
+const { runSteady, parseArgs } = require('./railway');
 
 const argv = process.argv.slice(2);
 const flag = (name, def) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : def; };

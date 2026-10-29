@@ -1,0 +1,11 @@
+{
+  "name": "@system-design/loadgen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Railway-reservation trace generator and end-to-end reconciliation check",
+  "scripts": {
+    "loadgen": "node railway.js --rate 20 --duration 60",
+    "loadgen:burst": "node railway.js --burst 15000",
+    "reconcile": "node reconcile.js"
+  }
+}
