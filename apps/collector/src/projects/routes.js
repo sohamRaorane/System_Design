@@ -108,7 +108,15 @@ function projectsRouter(ctx) {
   });
 
   // ---------- traces ----------
-  router.get('/api/projects/:pid/traces', loadProject, (req, res) => listTraces(ctx, req.project.id, req.query, res));
+  router.get('/api/projects/:pid/traces', loadProject, async (req, res) => {
+    if (req.query.loadtest !== undefined) {
+      const ids = await ctx.loadtests.traceIds(req.project.id, String(req.query.loadtest));
+      if (!ids) return res.status(404).json({ error: 'not_found', message: 'No such test run.' });
+      if (!ids.length) return res.json({ items: [], next_cursor: null });
+      return listTraces(ctx, req.project.id, req.query, res, { trace_ids: ids });
+    }
+    return listTraces(ctx, req.project.id, req.query, res);
+  });
   router.get('/api/projects/:pid/traces/:traceId', loadProject, (req, res) => findTrace(ctx, req.project.id, req.params.traceId, res));
   router.get('/api/projects/:pid/services', loadProject, async (req, res) => res.json({ services: await ctx.repo.services(req.project.id) }));
 

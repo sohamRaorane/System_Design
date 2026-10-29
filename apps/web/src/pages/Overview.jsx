@@ -37,6 +37,7 @@ export function Overview({ pid, project, base, extra }) {
           <span className="row" style={{ marginTop: 10 }}>
             {!project.repo && !project.is_default ? <button type="button" onClick={() => navigate(`${base}/connect`)}>Connect a repository</button> : null}
             <button type="button" className="quiet" onClick={() => navigate(`${base}/settings`)}>Set up by hand</button>
+            <button type="button" className="quiet" onClick={() => navigate(`${base}/load`)}>Try simulated traffic</button>
           </span>
         </div>
       ) : null}

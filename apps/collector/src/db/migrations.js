@@ -130,6 +130,31 @@ ALTER TABLE projects ADD COLUMN pr_branch TEXT
 `;
     },
   },
+  {
+    name: '005_load_tests',
+    sql: (d) => {
+      const t = T(d);
+      return `
+CREATE TABLE load_tests (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  user_id       TEXT,
+  kind          TEXT NOT NULL,
+  target_url    TEXT,
+  rps           ${t.int} NOT NULL,
+  duration_s    ${t.int} NOT NULL,
+  status        TEXT NOT NULL,
+  started_at    ${t.big} NOT NULL,
+  finished_at   ${t.big},
+  summary_json  TEXT,
+  timeline_json TEXT,
+  trace_ids_json TEXT,
+  error         TEXT
+);
+CREATE INDEX idx_load_tests_project ON load_tests (project_id, started_at DESC)
+`;
+    },
+  },
 ];
 
 /** Split a multi-statement DDL string into single statements (no semicolons inside strings). */

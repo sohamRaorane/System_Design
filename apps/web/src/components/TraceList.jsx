@@ -12,7 +12,7 @@ export function TraceList({ items, selected, onSelect }) {
             <span className="dur">{ms(t.duration_ms)}</span>
             <span className="meta">
               <span>{t.root_service || 'unknown service'}</span>
-              {t.span_count !== undefined ? <span>{t.span_count} spans</span> : null}
+              {t.span_count !== undefined ? <span>{t.span_count} {t.span_count === 1 ? 'span' : 'spans'}</span> : null}
               <span>{ago(t.finalized_at)}</span>
               <ReasonBadge reason={t.sample_reason} />
               {t.is_complete === false ? <span>incomplete</span> : null}
