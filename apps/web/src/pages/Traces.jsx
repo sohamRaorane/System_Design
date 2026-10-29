@@ -15,7 +15,7 @@ const VIEWS = [
   { key: 'NORMAL_SAMPLED', label: 'Normal samples', filters: { reason: 'NORMAL_SAMPLED' } },
 ];
 
-export function Traces({ project, base, traceId }) {
+export function Traces({ pid, base, traceId }) {
   const { query, navigate } = useRouter();
   const view = query.get('status') === 'ERROR' ? 'errors' : query.get('reason') || '';
   const service = query.get('service') || '';
@@ -26,8 +26,9 @@ export function Traces({ project, base, traceId }) {
   const [lookup, setLookup] = useState('');
 
   const filters = { ...(VIEWS.find((v) => v.key === view)?.filters || {}), service: service || undefined, min_duration_ms: minMs || undefined, include_archived: archived ? 'true' : undefined, limit: 30 };
-  const list = useData(() => api.traces(project, filters), [project, view, service, minMs, archived], { every: 5000 });
-  useEffect(() => { setPages([]); setCursor(null); }, [project, view, service, minMs, archived]);
+  const list = useData(() => api.traces(pid, filters), [pid, view, service, minMs, archived], { every: 5000 });
+  const services = useData(() => api.services(pid), [pid], { every: 30000 });
+  useEffect(() => { setPages([]); setCursor(null); }, [pid, view, service, minMs, archived]);
   useEffect(() => { if (list.data && !pages.length) setCursor(list.data.next_cursor); }, [list.data, pages.length]);
 
   const setParam = (k, v) => {
@@ -38,7 +39,7 @@ export function Traces({ project, base, traceId }) {
   };
 
   const loadMore = async () => {
-    const r = await api.traces(project, { ...filters, cursor });
+    const r = await api.traces(pid, { ...filters, cursor });
     setPages((p) => [...p, ...r.items]);
     setCursor(r.next_cursor);
   };
@@ -68,7 +69,10 @@ export function Traces({ project, base, traceId }) {
               ))}
             </div>
             <div className="row">
-              <input aria-label="Service" placeholder="Service name" defaultValue={service} onBlur={(e) => setParam('service', e.target.value.trim().toLowerCase())} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} style={{ width: 160 }} />
+              <select aria-label="Service" value={service} onChange={(e) => setParam('service', e.target.value)}>
+                <option value="">All services</option>
+                {(services.data?.services || []).map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
               <select aria-label="Minimum duration" value={minMs} onChange={(e) => setParam('min_ms', e.target.value)}>
                 <option value="">Any duration</option>
                 <option value="100">Slower than 100 ms</option>
@@ -94,7 +98,7 @@ export function Traces({ project, base, traceId }) {
           {cursor ? <div style={{ marginTop: 12 }}><button type="button" className="quiet" onClick={loadMore}>Show older traces</button></div> : null}
         </section>
 
-        {traceId ? <TraceDetail project={project} traceId={traceId} onClose={() => navigate(`${base}/traces${query.toString() ? '?' + query : ''}`)} /> : null}
+        {traceId ? <TraceDetail pid={pid} traceId={traceId} onClose={() => navigate(`${base}/traces${query.toString() ? '?' + query : ''}`)} /> : null}
       </div>
     </>
   );
@@ -107,8 +111,8 @@ const SOURCE_TEXT = {
   cold: 'From the long-term archive',
 };
 
-function TraceDetail({ project, traceId, onClose }) {
-  const res = useData(() => api.trace(project, traceId), [project, traceId], { every: 4000 });
+function TraceDetail({ pid, traceId, onClose }) {
+  const res = useData(() => api.trace(pid, traceId), [pid, traceId], { every: 4000 });
   const t = res.data?.trace;
   return (
     <section className="panel" aria-label="Trace detail">

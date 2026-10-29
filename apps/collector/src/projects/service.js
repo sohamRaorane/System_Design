@@ -101,7 +101,7 @@ class ProjectService {
     const now = this.clock.now();
     let l = this.live.get(projectId);
     if (!l) {
-      l = { rate: new RollingRate(this.clock, 10), spans: 0, lastSpanAt: 0, touchedAt: 0, firstMarked: false };
+      l = { rate: new RollingRate(this.clock, 5), spans: 0, lastSpanAt: 0, touchedAt: 0, firstMarked: false };
       this.live.set(projectId, l);
     }
     l.rate.add(spans.length);
