@@ -17,7 +17,7 @@ function pickRoot(sorted, rootSpanId) {
 
 /**
  * @param {object[]} spans
- * @param {object} meta { trace_id, rootSpanId, is_complete, created_at, finalized_at, truncated }
+ * @param {object} meta { project_id, trace_id, rootSpanId, is_complete, created_at, finalized_at, truncated }
  */
 function buildTrace(spans, meta) {
   const sorted = sortSpans(spans);
@@ -33,6 +33,7 @@ function buildTrace(spans, meta) {
     services.add(s.service);
   }
   return {
+    project_id: meta.project_id || 'default',
     trace_id: meta.trace_id,
     spans: sorted,
     root_service: root ? root.service : null,

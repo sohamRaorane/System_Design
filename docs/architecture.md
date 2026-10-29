@@ -32,14 +32,14 @@ Control plane: RuntimeConfig (validated, versioned, hot-reload), faults, /metric
 
 | # | Gap | Phase |
 |---|---|---|
-| G1 | `/v1/traces` accepts our own flat JSON, not OTLP (real SDKs get 400s) | 1 |
-| G2 | Completeness relies on a custom `trace.expected_spans` hint; without it real traces are finalized after 500 ms and later services' spans are dropped as "late" | 1 |
+| G1 | ~~`/v1/traces` accepts our own flat JSON, not OTLP~~ — closed: OTLP protobuf + JSON | 1 ✔ |
+| G2 | ~~Real traces finalized after 500 ms; later services' spans dropped as late~~ — closed: 6 s settle window, late spans merged into kept traces | 1 ✔ |
 | G3 | No users, projects or tenant isolation | 2 |
 | G4 | Control endpoints are open when `ADMIN_TOKEN` is unset | 2 |
-| G5 | SQLite, spill and `cold/` live on local disk; Render Free disk is ephemeral | 5 |
+| G5 | SQLite, spill and `cold/` live on local disk; Render Free disk is ephemeral (storage is now an async adapter + blob store interface, ready for Postgres/R2) | 5 |
 | G6 | Collector is long-running and stateful, so it cannot run on Vercel | 5 (Render) |
 | G7 | Aggregator state is in-memory, so only one instance is correct | documented; trace-id routing after v1.0 |
-| G8 | Archived-trace search filters by root service only; cold reads use `gunzipSync` | 6 |
+| G8 | ~~Archived search by root service only; sync gunzip~~ — closed in the async storage refactor | 1 ✔ |
 
 ## Deployment target (v1.0)
 

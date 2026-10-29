@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { harness, post, wire } = require('./helpers');
 
 let h, url;
-before(async () => { h = harness(); url = await h.listen(); });
+before(async () => { h = await harness(); url = await h.listen(); });
 after(async () => { await h.cleanup(); await h2?.cleanup(); });
 
 test('T1 malformed JSON -> 400 invalid_json, no stack (E1)', async () => {
@@ -32,7 +32,7 @@ test('T1 wrong content type -> 415 (E11)', async () => {
 test('T1 too many spans -> 413, oversize body -> 413 (E3)', async () => {
   const many = Array.from({ length: 1001 }, (_, i) => wire({ span_id: i.toString(16).padStart(16, '0') }));
   assert.equal((await post(url, { spans: many })).status, 413);
-  const big = { spans: [wire({ attributes: { x: 'y'.repeat(1_100_000) } })] };
+  const big = { spans: [wire({ attributes: { x: 'y'.repeat(4_300_000) } })] };
   assert.equal((await post(url, big)).status, 413);
 });
 
@@ -74,7 +74,7 @@ test('T1 partial batch -> 202 with errors[] (E4), upper-case ids lower-cased (E8
 
 let h2, url2;
 test('T2 SOFT/FULL transitions, 429 + Retry-After, nothing queued on 429 (E10)', async () => {
-  h2 = harness({ config: { queue_soft_limit: 3, queue_hard_limit: 5 } });
+  h2 = await harness({ config: { queue_soft_limit: 3, queue_hard_limit: 5 } });
   url2 = await h2.listen();
   const h = h2, url = url2;
   const q = h.ctx.queue;
@@ -111,8 +111,8 @@ test('T19 health: ok, then 503 when queue FULL, breaker open, or DB unreachable'
   assert.ok((await r.json()).reasons.some((x) => x.includes('breaker')));
   h.ctx.breaker.onSuccess();
 
-  h.ctx.db.close();
+  await h.ctx.db.close();
   r = await fetch(url + '/health');
   assert.equal(r.status, 503);
-  assert.ok((await r.json()).reasons.some((x) => x.includes('sqlite')));
+  assert.ok((await r.json()).reasons.some((x) => x.includes('database')));
 });

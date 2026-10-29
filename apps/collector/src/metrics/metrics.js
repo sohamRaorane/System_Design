@@ -62,11 +62,18 @@ function createMetrics(clock) {
       spans_invalid: 0,
       rejected_spans: 0,
       clock_skew_spans: 0,
+      requests_by_format: { 'otlp-proto': 0, 'otlp-json': 0, legacy: 0 },
+      unauthorized_requests: 0,
+      rate_limited_requests: 0,
+      ignored_signal_requests: 0,
       // aggregation
       traces_finalized: { hint: 0, settle: 0, timeout: 0, evicted: 0, shutdown: 0 },
       duplicate_spans: 0,
       conflicting_duplicates: 0,
       late_spans: 0,
+      late_spans_merged: 0,
+      late_spans_dropped: 0,
+      late_error_rescued: 0,
       oversized_spans_dropped: 0,
       multi_root_traces: 0,
       // sampling
@@ -94,8 +101,9 @@ function createMetrics(clock) {
 }
 
 /** Assemble the /metrics JSON snapshot from counters plus live gauges. */
-function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
+async function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
   const c = m.c;
+  const [hot, cold] = await Promise.all([repo.safeCount('hot'), repo.safeCount('cold')]);
   return {
     ingestion: {
       spans_received: c.spans_received,
@@ -104,6 +112,10 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       rejected_spans: c.rejected_spans,
       ingest_rate_per_sec: m.ingestRate.rate(),
       clock_skew_spans: c.clock_skew_spans,
+      requests_by_format: { ...c.requests_by_format },
+      unauthorized_requests: c.unauthorized_requests,
+      rate_limited_requests: c.rate_limited_requests,
+      ignored_signal_requests: c.ignored_signal_requests,
     },
     queue: {
       queue_depth: queue.size,
@@ -117,6 +129,9 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       duplicate_spans: c.duplicate_spans,
       conflicting_duplicates: c.conflicting_duplicates,
       late_spans: c.late_spans,
+      late_spans_merged: c.late_spans_merged,
+      late_spans_dropped: c.late_spans_dropped,
+      late_error_rescued: c.late_error_rescued,
       oversized_spans_dropped: c.oversized_spans_dropped,
       multi_root_traces: c.multi_root_traces,
       tombstones: aggregator.tombstoneCount,
@@ -140,12 +155,12 @@ function snapshot(m, { queue, aggregator, batch, breaker, repo, config }) {
       breaker_opened_total: c.breaker_opened_total,
     },
     storage: {
-      hot_trace_count: repo.safeCount('hot'),
+      hot_trace_count: hot,
       finalize_to_stored_ms: { p50: m.finalizeToStored.percentile(50), p95: m.finalizeToStored.percentile(95) },
     },
     archive: {
       archived_traces: c.archived_traces,
-      cold_trace_count: repo.safeCount('cold'),
+      cold_trace_count: cold,
       archive_runs: c.archive_runs,
       archive_failures: c.archive_failures,
       archive_retries: c.archive_retries,

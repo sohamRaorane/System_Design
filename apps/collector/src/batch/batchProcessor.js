@@ -1,5 +1,5 @@
 'use strict';
-// Batch processor (section 5.6): size/interval flush, single in-order writer,
+// Batch processor (section 5.6): size/interval flush, single in-order async writer,
 // retry with backoff, circuit breaker, outage shedding and disk spill.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -20,9 +20,10 @@ class BatchProcessor {
     this.pending = []; // [{ traces, attempt }]
     this.flushTimer = null;
     this.retryTimer = null;
-    this.writing = false;
+    this.writing = null; // Promise of the running writer loop
     this.stopped = true;
     this.spillSeq = 0;
+    this.listeners = new Set(); // called with each stored batch (first-trace detection, UI)
     config.on('config:changed', (e) => {
       if (!this.stopped && e.changed.includes('batch_flush_interval_ms')) this._armFlushTimer();
     });
@@ -34,6 +35,11 @@ class BatchProcessor {
 
   get pendingCount() {
     return this.pending.length;
+  }
+
+  onStored(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
   }
 
   start() {
@@ -59,7 +65,10 @@ class BatchProcessor {
     if (this.current.length >= this.config.get().batch_flush_size) this.flush();
   }
 
-  /** Move the current batch to the tail of pending and kick the writer. Timer resets (E41). */
+  /**
+   * Move the current batch to the tail of pending and kick the writer. Timer resets (E41).
+   * Returns the writer promise so callers (tests, admin flush) can await the write.
+   */
   flush() {
     if (!this.stopped) this._armFlushTimer();
     if (this.current.length) {
@@ -67,51 +76,54 @@ class BatchProcessor {
       this.current = [];
       this._enforceMemoryBound();
     }
-    this._pump();
+    return this._pump();
   }
 
+  /** Start the writer loop if it is not running. Resolves when the loop stops. */
   _pump() {
-    if (this.writing || !this.pending.length) return;
+    if (this.writing) return this.writing;
+    if (!this.pending.length) return Promise.resolve();
     clearTimeout(this.retryTimer);
     this.retryTimer = null;
-    if (!this.breaker.canAttempt()) {
-      this._scheduleRetry(this.breaker.msUntilHalfOpen() + 1);
-      return;
-    }
-    this.writing = true;
-    try {
-      // Writer loop: always the head, so batches are stored in order, one at a time.
-      while (this.pending.length) {
-        if (!this.breaker.canAttempt()) {
-          this._scheduleRetry(this.breaker.msUntilHalfOpen() + 1);
-          return;
-        }
-        const head = this.pending[0];
-        try {
-          const storedAt = this.repo.insertBatch(head.traces);
-          this.pending.shift();
-          this.breaker.onSuccess();
-          this.metrics.c.batches_flushed++;
-          const mono = this.clock.mono();
-          for (const t of head.traces) {
-            t.stored_at = storedAt;
-            if (t._finMono !== undefined) this.metrics.finalizeToStored.add(Math.max(0, mono - t._finMono));
-          }
-        } catch (err) {
-          head.attempt++;
-          this.breaker.onFailure();
-          this.metrics.c.batch_failures++;
-          this.metrics.c.batch_retries++;
-          const cfg = this.config.get();
-          this.logger?.warn?.(`batch write failed (attempt ${head.attempt}): ${err.message}`);
-          this._scheduleRetry(backoffDelay(head.attempt, cfg.retry_base_ms, cfg.retry_max_ms, this.rng));
-          return;
-        }
+    this.writing = this._writeLoop().finally(() => {
+      this.writing = null;
+    });
+    return this.writing;
+  }
+
+  async _writeLoop() {
+    // Always write the head, so batches are stored in order, one at a time (E40).
+    while (this.pending.length) {
+      if (!this.breaker.canAttempt()) {
+        this._scheduleRetry(this.breaker.msUntilHalfOpen() + 1);
+        return;
       }
-      this._replaySpill();
-    } finally {
-      this.writing = false;
+      const head = this.pending[0];
+      try {
+        const storedAt = await this.repo.insertBatch(head.traces);
+        if (this.pending[0] === head) this.pending.shift();
+        this.breaker.onSuccess();
+        this.metrics.c.batches_flushed++;
+        const mono = this.clock.mono();
+        for (const t of head.traces) {
+          t.stored_at = storedAt;
+          if (t._finMono !== undefined) this.metrics.finalizeToStored.add(Math.max(0, mono - t._finMono));
+        }
+        for (const fn of this.listeners) {
+          try { fn(head.traces); } catch (err) { this.logger?.warn?.('stored listener failed:', err.message); }
+        }
+      } catch (err) {
+        head.attempt++;
+        this.breaker.onFailure();
+        this.metrics.c.batch_failures++;
+        this.metrics.c.batch_retries++;
+        const cfg = this.config.get();
+        this.logger?.warn?.(`batch write failed (attempt ${head.attempt}): ${err.message}`);
+        this._scheduleRetry(backoffDelay(head.attempt, cfg.retry_base_ms, cfg.retry_max_ms, this.rng));
+        return;
+      }
     }
+    this._replaySpill();
   }
 
   _scheduleRetry(ms) {
@@ -126,30 +138,40 @@ class BatchProcessor {
   _enforceMemoryBound() {
     const max = this.config.get().max_pending_batches;
     if (this.pending.length <= max) return;
-    for (const batch of this.pending) {
-      if (this.pending.length <= max) break;
+    // Never touch the head while a write of it may be in flight.
+    const start = this.writing ? 1 : 0;
+    for (let i = start; i < this.pending.length && this.pending.length > max; i++) {
+      const batch = this.pending[i];
       const before = batch.traces.length;
       batch.traces = batch.traces.filter((t) => t.sample_reason !== 'NORMAL_SAMPLED');
       this.metrics.c.shed_during_outage += before - batch.traces.length;
     }
-    this.pending = this.pending.filter((b) => b.traces.length);
-    while (this.pending.length > max) {
-      const oldest = this.pending.shift();
-      this._spill(oldest);
+    this.pending = this.pending.filter((b, i) => i < start || b.traces.length);
+    while (this.pending.length > max && this.pending.length > start) {
+      const [oldest] = this.pending.splice(start, 1);
+      if (!this._spill(oldest)) {
+        this.pending.splice(start, 0, oldest);
+        break;
+      }
     }
   }
 
   _spill(batch) {
     if (!this.spillDir) {
       this.logger?.error?.('pending bound exceeded and no spill dir; keeping batch in memory');
-      this.pending.unshift(batch);
-      return;
+      return false;
     }
-    fs.mkdirSync(this.spillDir, { recursive: true });
-    const file = path.join(this.spillDir, `spill-${this.clock.now()}-${this.spillSeq++}.jsonl`);
-    fs.writeFileSync(file + '.tmp', batch.traces.map((t) => JSON.stringify(t)).join('\n') + '\n');
-    fs.renameSync(file + '.tmp', file);
-    this.metrics.c.spilled_batches++;
+    try {
+      fs.mkdirSync(this.spillDir, { recursive: true });
+      const file = path.join(this.spillDir, `spill-${this.clock.now()}-${String(this.spillSeq++).padStart(6, '0')}.jsonl`);
+      fs.writeFileSync(file + '.tmp', batch.traces.map((t) => JSON.stringify(t)).join('\n') + '\n');
+      fs.renameSync(file + '.tmp', file);
+      this.metrics.c.spilled_batches++;
+      return true;
+    } catch (err) {
+      this.logger?.error?.('spill failed, keeping batch in memory:', err.message);
+      return false;
+    }
   }
 
   _cleanSpillTmp() {
@@ -171,24 +193,27 @@ class BatchProcessor {
     if (files.length) setImmediate(() => this._pump());
   }
 
-  findPending(traceId) {
-    for (const t of this.current) if (t.trace_id === traceId) return t;
-    for (const b of this.pending) for (const t of b.traces) if (t.trace_id === traceId) return t;
+  findPending(projectId, traceId) {
+    const match = (t) => t.trace_id === traceId && (t.project_id || 'default') === projectId;
+    for (const t of this.current) if (match(t)) return t;
+    for (const b of this.pending) for (const t of b.traces) if (match(t)) return t;
     return null;
   }
 
-  /** Graceful shutdown: flush and try to write everything once. Returns true if nothing is left. */
-  drainAll() {
+  /** Graceful shutdown: flush and try to write everything once. Resolves true if nothing is left. */
+  async drainAll() {
     if (this.current.length) {
       this.pending.push({ traces: this.current, attempt: 0 });
       this.current = [];
     }
-    this.writing = false;
+    if (this.writing) await this.writing;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
     // Ignore backoff on shutdown but respect the breaker's refusal to write.
     while (this.pending.length && this.breaker.canAttempt()) {
+      const head = this.pending[0];
       try {
-        const head = this.pending[0];
-        const storedAt = this.repo.insertBatch(head.traces);
+        const storedAt = await this.repo.insertBatch(head.traces);
         for (const t of head.traces) t.stored_at = storedAt;
         this.pending.shift();
         this.metrics.c.batches_flushed++;
