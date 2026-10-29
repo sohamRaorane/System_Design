@@ -52,7 +52,7 @@ class Aggregator {
     if (tomb) {
       if (tomb.expiresAt > this.clock.now()) {
         if (tomb.spanIds.has(span.span_id)) c.duplicate_spans++;
-        else c.late_spans++;
+        else this._late(span, tomb);
         return;
       }
       this.tombstones.delete(key);
@@ -156,6 +156,45 @@ class Aggregator {
     return trace;
   }
 
+  /**
+   * A span for a trace that was already finalized. Real SDKs export each service's spans
+   * on their own schedule, so this is normal, not an error (architecture gap G2):
+   *  - trace was kept    -> store the span as a fragment; merge-on-write unions it in
+   *  - trace was dropped -> drop it too (consistent sampling), unless the span is an
+   *                         ERROR: errors are never dropped silently, so the fragment is
+   *                         kept as an incomplete ERROR trace and later spans follow it.
+   */
+  _late(span, tomb) {
+    const c = this.metrics.c;
+    c.late_spans++;
+    let reason = tomb.kept ? tomb.reason : null;
+    if (!tomb.kept && span.status === 'ERROR') {
+      reason = 'ERROR';
+      tomb.kept = true;
+      tomb.reason = 'ERROR';
+      c.late_error_rescued++;
+      c.kept_total++;
+      c.kept_by_reason.ERROR++;
+    }
+    if (!reason) {
+      c.late_spans_dropped++;
+      return;
+    }
+    tomb.spanIds.add(span.span_id);
+    const fragment = buildTrace([span], {
+      project_id: span.project_id || 'default',
+      trace_id: span.trace_id,
+      is_complete: false,
+      created_at: tomb.createdAt,
+      finalized_at: tomb.finalizedAt,
+    });
+    fragment.sampled = true;
+    fragment.sample_reason = reason;
+    fragment.late_fragment = true;
+    c.late_spans_merged++;
+    this.sink.add(fragment);
+  }
+
   _writeTombstone(entry, decision = { keep: false, reason: null }) {
     const ttl = Math.max(2 * this.config.get().trace_timeout_ms, TOMBSTONE_MIN_TTL_MS);
     this.tombstones.delete(entry.key); // re-insert at the end (newest)
@@ -164,6 +203,8 @@ class Aggregator {
       expiresAt: this.clock.now() + ttl,
       kept: decision.keep,
       reason: decision.reason,
+      createdAt: entry.firstSeenAt,
+      finalizedAt: this.clock.now(),
     });
     while (this.tombstones.size > MAX_TOMBSTONES) {
       this.tombstones.delete(this.tombstones.keys().next().value);

@@ -10,7 +10,9 @@ const DEFAULTS = Object.freeze({
   keep_incomplete_traces: true,
   backpressure_sampling_factor: 0.25,
   trace_timeout_ms: 30000,
-  settle_window_ms: 500,
+  // Must exceed the SDK export interval (BatchSpanProcessor default 5 s) so spans from
+  // other services arrive before the trace is closed.
+  settle_window_ms: 6000,
   max_spans_per_trace: 1000,
   max_open_traces: 50000,
   queue_soft_limit: 5000,
