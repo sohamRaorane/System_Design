@@ -286,3 +286,21 @@ details summary { cursor: pointer; color: var(--ink-2); font-weight: 500; }
 .code-block button.quiet { background: transparent; color: var(--paper); border-color: color-mix(in srgb, var(--paper) 40%, transparent); }
 .code-block button.quiet:hover { background: color-mix(in srgb, var(--paper) 12%, transparent); }
 input[type='range'], input[type='checkbox'] { accent-color: var(--signal); }
+
+/* ---------- connect a repository ---------- */
+.steps { list-style: none; counter-reset: step; display: flex; gap: 8px; padding: 0; margin: 0 0 22px; flex-wrap: wrap; }
+.steps li { counter-increment: step; display: flex; align-items: center; gap: 8px; color: var(--ink-3); font-weight: 500; padding-right: 14px; }
+.steps li::before { content: counter(step); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: var(--t-xs); font-weight: 700; border: 2px solid var(--rule-strong); }
+.steps li[aria-current='step'] { color: var(--ink); }
+.steps li[aria-current='step']::before { border-color: var(--signal); background: var(--signal); color: #fff; }
+.steps li.done::before { content: '✓'; border-color: var(--signal); color: var(--signal); }
+.repo-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); max-height: 420px; overflow: auto; }
+.repo-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--rule); }
+.changes { margin: 0; padding-left: 18px; }
+.changes li { margin: 4px 0; }
+.changes code { font-weight: 500; margin-right: 6px; }
+.panel.waiting { border-style: dashed; }
+.panel.waiting.ok { border-style: solid; border-color: var(--signal); background: var(--signal-soft); }
+.panel.waiting h2 { display: flex; align-items: center; gap: 10px; }
+.pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }

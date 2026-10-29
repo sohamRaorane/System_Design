@@ -106,6 +106,12 @@ export const api = {
   traces: (pid, filters) => request(`${P(pid)}/traces` + qs(filters)),
   trace: (pid, id) => request(`${P(pid)}/traces/${encodeURIComponent(id)}`),
 
+  installations: (next) => request('/api/github/installations' + qs({ next })),
+  installationRepos: (iid) => request(`/api/github/installations/${iid}/repos`),
+  linkRepo: (pid, installation_id, full_name) => request(`${P(pid)}/repo`, { method: 'POST', body: { installation_id, full_name } }),
+  openPullRequest: (pid, service_name) => request(`${P(pid)}/repo/pull-request`, { method: 'POST', body: { service_name } }),
+  unlinkRepo: (pid) => request(`${P(pid)}/repo`, { method: 'DELETE' }),
+
   adminConfig: () => request('/api/admin/config'),
   updateAdminConfig: (patch) => request('/api/admin/config', { method: 'PUT', body: patch }),
   faults: () => request('/api/admin/faults'),

@@ -117,6 +117,19 @@ INSERT INTO projects (id, owner_id, name, settings_json, created_at) VALUES ('de
 `;
     },
   },
+  {
+    name: '004_project_repo',
+    sql: (d) => {
+      const t = T(d);
+      return `
+ALTER TABLE projects ADD COLUMN repo_full_name TEXT;
+ALTER TABLE projects ADD COLUMN repo_installation_id ${t.big};
+ALTER TABLE projects ADD COLUMN repo_stack TEXT;
+ALTER TABLE projects ADD COLUMN pr_url TEXT;
+ALTER TABLE projects ADD COLUMN pr_branch TEXT
+`;
+    },
+  },
 ];
 
 /** Split a multi-statement DDL string into single statements (no semicolons inside strings). */

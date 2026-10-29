@@ -28,6 +28,7 @@ const { Jwt, loadSigningKey } = require('./auth/jwt');
 const { authMiddleware } = require('./auth/middleware');
 const { authRouter } = require('./auth/routes');
 const { GitHubClient } = require('./github/client');
+const { githubRouter } = require('./github/routes');
 const { ingestRouter } = require('./ingest/routes');
 const { queryRouter } = require('./query/routes');
 const { controlRouter } = require('./control/routes');
@@ -100,6 +101,7 @@ async function createApp({
   app.use(ingestRouter(ctx));
   app.use(authRouter(ctx));
   app.use(projectsRouter(ctx));
+  app.use(githubRouter(ctx));
   app.use(queryRouter(ctx, { guard: ctx.auth.operatorGuard }));
   app.use(controlRouter(ctx));
   app.use(metricsRouter(ctx));

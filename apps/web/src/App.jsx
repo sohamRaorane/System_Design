@@ -9,6 +9,7 @@ import { Projects } from './pages/Projects.jsx';
 import { Overview } from './pages/Overview.jsx';
 import { Traces } from './pages/Traces.jsx';
 import { Settings } from './pages/Settings.jsx';
+import { Connect } from './pages/Connect.jsx';
 
 export function Redirect({ to }) {
   const { navigate } = useRouter();
@@ -21,6 +22,7 @@ const PROJECT_PAGES = {
   overview: (p) => <Overview {...p} />,
   traces: (p) => <Traces {...p} />,
   settings: (p) => <Settings {...p} />,
+  connect: (p) => <Connect {...p} />,
 };
 
 export function App() {
@@ -44,6 +46,8 @@ function Shell() {
   const project = useData(() => (pid ? api.project(pid) : Promise.resolve(null)), [pid], { every: 15000 });
   const proj = project.data ? { ...project.data.project, setup: project.data.setup } : null;
   const base = pid ? `/p/${pid}` : '';
+  const known = projects.data?.projects?.some((p) => p.id === pid);
+  useEffect(() => { if (pid && projects.data && !known) projects.refresh(); }, [pid, known]); // eslint-disable-line react-hooks/exhaustive-deps
 
   let page;
   if (path === '/projects') page = <Projects />;
@@ -70,6 +74,7 @@ function Shell() {
             <>
               <Link to={`${base}/overview`}>Overview</Link>
               <Link to={`${base}/traces`} activePrefix={`${base}/traces`}>Traces</Link>
+              {!proj?.is_default ? <Link to={`${base}/connect`}>Repository</Link> : null}
               <Link to={`${base}/settings`}>Settings</Link>
             </>
           ) : <Link to="/projects">Projects</Link>}
