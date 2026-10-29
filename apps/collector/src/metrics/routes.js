@@ -6,7 +6,9 @@ const { snapshot } = require('./metrics');
 function metricsRouter(ctx) {
   const router = express.Router();
 
-  router.get('/metrics', async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
+  // Operators: /metrics (X-Admin-Token in production). Dashboard users: /api/pipeline.
+  router.get('/metrics', ctx.auth.operatorGuard, async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
+  router.get('/api/pipeline', ctx.auth.requireUser, async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
 
   router.get('/health', async (req, res) => {
     const reasons = [];

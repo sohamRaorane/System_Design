@@ -60,6 +60,33 @@ CREATE INDEX idx_archive_key        ON archive_index (object_key);
 `;
     },
   },
+  {
+    name: '002_accounts',
+    sql: (d) => {
+      const t = T(d);
+      return `
+CREATE TABLE users (
+  id            TEXT PRIMARY KEY,
+  github_id     ${t.big} UNIQUE,
+  login         TEXT NOT NULL,
+  name          TEXT,
+  avatar_url    TEXT,
+  github_token  TEXT,
+  created_at    ${t.big} NOT NULL,
+  last_login_at ${t.big} NOT NULL
+);
+CREATE UNIQUE INDEX idx_users_login ON users (login);
+CREATE TABLE sessions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  created_at  ${t.big} NOT NULL,
+  expires_at  ${t.big} NOT NULL,
+  user_agent  TEXT
+);
+CREATE INDEX idx_sessions_user ON sessions (user_id);
+`;
+    },
+  },
 ];
 
 /** Split a multi-statement DDL string into single statements (no semicolons inside strings). */
