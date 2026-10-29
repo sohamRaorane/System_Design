@@ -115,6 +115,55 @@ class GitHubClient {
     }
     return out;
   }
+
+  // ---------- repository contents and pull requests (installation token) ----------
+
+  async getRepo(token, fullName) {
+    return this.request(`/repos/${fullName}`, { token });
+  }
+
+  /** File text at ref, or null when the file does not exist. */
+  async readFile(token, fullName, path, ref) {
+    try {
+      const r = await this.request(`/repos/${fullName}/contents/${encodeURIComponent(path)}${ref ? `?ref=${encodeURIComponent(ref)}` : ''}`, { token });
+      if (!r || r.type !== 'file' || typeof r.content !== 'string') return null;
+      return { text: Buffer.from(r.content, r.encoding || 'base64').toString('utf8'), sha: r.sha };
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  async branchSha(token, fullName, branch) {
+    const r = await this.request(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, { token });
+    return r.object.sha;
+  }
+
+  /** Create a branch from sha; if the name is taken, try name-2, name-3, ... */
+  async createBranch(token, fullName, name, sha) {
+    for (let i = 1; i <= 20; i++) {
+      const branch = i === 1 ? name : `${name}-${i}`;
+      try {
+        await this.request(`/repos/${fullName}/git/refs`, { token, method: 'POST', body: { ref: `refs/heads/${branch}`, sha } });
+        return branch;
+      } catch (err) {
+        if (err.status !== 422) throw err;
+      }
+    }
+    throw new GitHubError(422, 'could not find a free branch name');
+  }
+
+  async putFile(token, fullName, { path, content, message, branch, sha }) {
+    return this.request(`/repos/${fullName}/contents/${encodeURIComponent(path)}`, {
+      token,
+      method: 'PUT',
+      body: { message, content: Buffer.from(content, 'utf8').toString('base64'), branch, ...(sha ? { sha } : {}) },
+    });
+  }
+
+  async createPull(token, fullName, { title, head, base, body }) {
+    return this.request(`/repos/${fullName}/pulls`, { token, method: 'POST', body: { title, head, base, body, maintainer_can_modify: true } });
+  }
 }
 
 module.exports = { GitHubClient, GitHubError };
