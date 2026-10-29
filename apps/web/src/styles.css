@@ -304,3 +304,25 @@ input[type='range'], input[type='checkbox'] { accent-color: var(--signal); }
 .panel.waiting h2 { display: flex; align-items: center; gap: 10px; }
 .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--warn); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.25; } }
+
+/* ---------- charts (series colours validated for CVD separation and contrast) ---------- */
+:root { --chart-ok: #008c80; --chart-bad: #c8372c; --chart-line: var(--slate); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --chart-ok: #25a399; --chart-bad: #e05f54; } }
+:root[data-theme='dark'] { --chart-ok: #25a399; --chart-bad: #e05f54; }
+.chart { margin: 0; min-width: 0; }
+.chart figcaption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: var(--t-sm); margin-bottom: 6px; }
+.chart .legend { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.chart .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+.chart .sw.ok { background: var(--chart-ok); }
+.chart .sw.bad { background: var(--chart-bad); }
+.chart-box { position: relative; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .axis text { font-size: 11px; fill: var(--ink-3); font-family: var(--font); }
+.chart .axis .grid { stroke: var(--rule); stroke-width: 1; }
+.chart .m-ok { fill: var(--chart-ok); }
+.chart .m-bad { fill: var(--chart-bad); }
+.chart .m-line { fill: none; stroke: var(--chart-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .m-dot { fill: var(--chart-line); stroke: var(--surface); stroke-width: 2; }
+.chart .cross { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-tip { position: absolute; top: 6px; transform: translateX(-50%); background: var(--ink); color: var(--paper); font-size: var(--t-xs); padding: 6px 8px; border-radius: var(--r-sm); pointer-events: none; white-space: nowrap; z-index: 2; }
+.chart-note { font-size: var(--t-sm); color: var(--ink-2); margin-top: 4px; }
