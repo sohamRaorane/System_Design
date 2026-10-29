@@ -326,3 +326,15 @@ input[type='range'], input[type='checkbox'] { accent-color: var(--signal); }
 .chart .cross { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart-tip { position: absolute; top: 6px; transform: translateX(-50%); background: var(--ink); color: var(--paper); font-size: var(--t-xs); padding: 6px 8px; border-radius: var(--r-sm); pointer-events: none; white-space: nowrap; z-index: 2; }
 .chart-note { font-size: var(--t-sm); color: var(--ink-2); margin-top: 4px; }
+
+/* ---------- admin ---------- */
+.drill { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--r-md); }
+.drill.on { border-color: var(--bad); background: var(--bad-soft); }
+.drill h3 { margin-bottom: 2px; }
+.cfg-group { border: 0; border-top: 1px solid var(--rule); padding: 12px 0 0; margin: 0; display: grid; gap: 8px; }
+.cfg-group legend { font-weight: 600; padding-right: 8px; }
+.cfg-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; align-items: center; font-size: var(--t-sm); }
+.cfg-row code { font-size: var(--t-xs); }
+.cfg-row input[type='checkbox'] { justify-self: start; width: 18px; height: 18px; }
+@media (max-width: 640px) { .cfg-row { grid-template-columns: 1fr; } }
+.drill button { white-space: nowrap; flex: none; }
