@@ -16,6 +16,12 @@ async function main() {
   const configPath = env.configPath || path.join(__dirname, '..', 'config', 'default.json');
   const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
   const { app, ctx } = await createApp({ env, config, logger });
+  if (ctx.blob.check) {
+    ctx.blob.check().then(() => logger.info('cold archive: object store reachable'))
+      .catch((err) => logger.warn(`cold archive: object store check failed (${err.message}); archiving will retry`));
+  } else if (env.production) {
+    logger.warn('cold archive is on local disk, which Render wipes on restart; set the R2_* variables for durable archives');
+  }
   ctx.start();
   const server = app.listen(env.port, () => logger.info(`collector listening on :${env.port} (db=${env.databaseUrl ? 'postgres' : env.dbPath}, public=${env.publicUrl})`));
   // Long-lived OTLP keep-alive connections from SDKs: stay above typical proxy idle timeouts.
