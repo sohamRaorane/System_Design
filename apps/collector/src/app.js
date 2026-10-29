@@ -13,6 +13,9 @@ const { createFaults } = require('./faults/faults');
 const { openDatabase } = require('./db');
 const { TraceRepo } = require('./store/traceRepo');
 const { AccountRepo } = require('./store/accountRepo');
+const { ProjectRepo } = require('./store/projectRepo');
+const { ProjectService } = require('./projects/service');
+const { projectsRouter } = require('./projects/routes');
 const { LocalBlobStore } = require('./blob/localStore');
 const { SpanQueue } = require('./queue/spanQueue');
 const { Aggregator } = require('./aggregate/aggregator');
@@ -70,14 +73,19 @@ async function createApp({
   const box = new SecretBox(signingKey);
   const accounts = new AccountRepo({ db, clock, box });
   const github = new GitHubClient({ ...env.github, fetchImpl: fetchImpl || fetch, clock });
+  const projects = new ProjectRepo({ db, clock });
+  const projectService = new ProjectService({ projects, env, clock, logger });
+  await projectService.load();
 
-  const ctx = { env, config: cfg, clock, metrics, faults, db, repo, accounts, blob: blobStore, breaker, batch, logger, jwt, box, github };
+  const ctx = { env, config: cfg, clock, metrics, faults, db, repo, accounts, projects, projectService, blob: blobStore, breaker, batch, logger, jwt, box, github };
   ctx.auth = authMiddleware(ctx);
+  ctx.resolveIngestProject = (req) => projectService.resolve(req);
+  ctx.onSpansAccepted = (projectId, spans) => projectService.onSpansAccepted(projectId, spans);
   // queue <-> aggregator <-> sampler are wired through closures to avoid construction cycles.
   const queue = new SpanQueue({ config: cfg, faults, clock, logger, consumer: (s) => ctx.aggregator.addSpan(s) });
-  const sampler = new Sampler({ config: cfg, queue, metrics, hash });
+  const sampler = new Sampler({ config: cfg, queue, metrics, hash, overrides: (pid) => projectService.overrides(pid) });
   const aggregator = new Aggregator({ config: cfg, clock, metrics, sampler, sink: batch, logger });
-  const archiver = new ArchiveWorker({ config: cfg, clock, metrics, repo, faults, blob: blobStore, logger });
+  const archiver = new ArchiveWorker({ config: cfg, clock, metrics, repo, faults, blob: blobStore, logger, retentionOverrides: () => projectService.retentionOverrides() });
   const coldReader = new ColdReader({ repo, blob: blobStore, metrics });
   Object.assign(ctx, { queue, sampler, aggregator, archiver, coldReader });
 
@@ -91,6 +99,7 @@ async function createApp({
   });
   app.use(ingestRouter(ctx));
   app.use(authRouter(ctx));
+  app.use(projectsRouter(ctx));
   app.use(queryRouter(ctx, { guard: ctx.auth.operatorGuard }));
   app.use(controlRouter(ctx));
   app.use(metricsRouter(ctx));
