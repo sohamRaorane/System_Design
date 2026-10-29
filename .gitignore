@@ -1,5 +1,37 @@
+# dependencies
 node_modules/
+
+# runtime data (SQLite hot store, spill files, cold archive)
 data/
 cold/
+*.db
+*.db-shm
+*.db-wal
+
+# build output
+dist/
+build/
+.vercel/
+
+# env & secrets — only .env.example is committed
+.env
+.env.*
+!.env.example
+*.pem
+
+# logs & reports
 *.log
+npm-debug.log*
 loadgen-summary*.json
+coverage/
+playwright-report/
+test-results/
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+desktop.ini
