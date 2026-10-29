@@ -12,15 +12,18 @@ function hashToUnit(traceId) {
 }
 
 class Sampler {
-  constructor({ config, queue, metrics, hash = hashToUnit }) {
+  constructor({ config, queue, metrics, hash = hashToUnit, overrides }) {
     this.config = config;
+    this.overrides = overrides; // (projectId) -> per-project settings, or undefined
     this.queue = queue; // { state }
     this.metrics = metrics;
     this.hash = hash;
   }
 
   decide(trace) {
-    const cfg = this.config.get();
+    const base = this.config.get();
+    const o = this.overrides?.(trace.project_id);
+    const cfg = o ? { ...base, ...o } : base;
     const c = this.metrics.c;
     const u = this.hash(trace.trace_id);
     const keep = (reason) => {

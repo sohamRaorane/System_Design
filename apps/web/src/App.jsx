@@ -1,18 +1,14 @@
 import { useEffect } from 'react';
+import { api } from './lib/api.js';
+import { useAuth } from './lib/auth.jsx';
+import { useData } from './lib/hooks.js';
 import { Link, match, useRouter } from './lib/router.jsx';
+import { Logo } from './components/Logo.jsx';
+import { Login } from './pages/Login.jsx';
+import { Projects } from './pages/Projects.jsx';
 import { Overview } from './pages/Overview.jsx';
 import { Traces } from './pages/Traces.jsx';
-
-export function Logo() {
-  return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="7" fill="var(--signal)" />
-      <path d="M5 20h6l3-9 4 13 3-7h6" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-const PROJECT = 'default';
+import { Settings } from './pages/Settings.jsx';
 
 export function Redirect({ to }) {
   const { navigate } = useRouter();
@@ -20,24 +16,71 @@ export function Redirect({ to }) {
   return null;
 }
 
+/** Pages that live inside one project: /p/:pid/<section>[/...]. */
+const PROJECT_PAGES = {
+  overview: (p) => <Overview {...p} />,
+  traces: (p) => <Traces {...p} />,
+  settings: (p) => <Settings {...p} />,
+};
+
 export function App() {
-  const { path } = useRouter();
-  if (path === '/') return <Redirect to="/overview" />;
-  const traceMatch = match('/traces/:id', path);
+  const { status } = useAuth();
+  const { path, search } = useRouter();
+
+  if (status === 'loading') return <div className="boot" aria-busy="true"><Logo /></div>;
+  if (path === '/login') return status === 'signedIn' ? <Redirect to="/projects" /> : <Login />;
+  if (status !== 'signedIn') return <Redirect to={`/login?next=${encodeURIComponent(path + search)}`} />;
+  if (path === '/' || path === '/overview') return <Redirect to="/projects" />;
+  return <Shell />;
+}
+
+function Shell() {
+  const { path, navigate } = useRouter();
+  const { user, signOut } = useAuth();
+  const projects = useData(() => api.projects(), [], { every: 30000 });
+
+  const m = match('/p/:pid/:section', path) || match('/p/:pid/:section/:rest', path);
+  const pid = m?.pid;
+  const project = useData(() => (pid ? api.project(pid) : Promise.resolve(null)), [pid], { every: 15000 });
+  const proj = project.data ? { ...project.data.project, setup: project.data.setup } : null;
+  const base = pid ? `/p/${pid}` : '';
 
   let page;
-  if (path === '/overview') page = <Overview project={PROJECT} base="" />;
-  else if (path === '/traces' || traceMatch) page = <Traces project={PROJECT} base="" traceId={traceMatch?.id} />;
-  else page = <div className="empty"><p>This page does not exist.</p><p><Link to="/overview">Go to the overview</Link></p></div>;
+  if (path === '/projects') page = <Projects />;
+  else if (m && PROJECT_PAGES[m.section]) {
+    if (project.error) page = <div className="empty"><p>{project.error.status === 404 ? 'This project does not exist, or it belongs to someone else.' : project.error.message}</p><p><Link to="/projects">Back to your projects</Link></p></div>;
+    else page = PROJECT_PAGES[m.section]({ pid, project: proj, base, traceId: m.section === 'traces' ? m.rest : undefined, onChanged: project.refresh });
+  } else page = <div className="empty"><p>This page does not exist.</p><p><Link to="/projects">Go to your projects</Link></p></div>;
 
   return (
     <div className="shell">
       <aside className="rail">
-        <Link to="/overview" className="brand"><Logo /> Tracepipe</Link>
+        <Link to="/projects" className="brand"><Logo /> Tracepipe</Link>
+        {projects.data?.projects?.length ? (
+          <label className="field switcher">
+            <span className="sr-only">Project</span>
+            <select value={pid || ''} onChange={(e) => e.target.value && navigate(`/p/${e.target.value}/overview`)} aria-label="Project">
+              <option value="">All projects</option>
+              {projects.data.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         <nav className="nav" aria-label="Main">
-          <Link to="/overview">Overview</Link>
-          <Link to="/traces" activePrefix="/traces">Traces</Link>
+          {pid ? (
+            <>
+              <Link to={`${base}/overview`}>Overview</Link>
+              <Link to={`${base}/traces`} activePrefix={`${base}/traces`}>Traces</Link>
+              <Link to={`${base}/settings`}>Settings</Link>
+            </>
+          ) : <Link to="/projects">Projects</Link>}
         </nav>
+        <div className="rail-foot">
+          <div className="user">
+            {user?.avatar_url ? <img src={user.avatar_url} alt="" width="22" height="22" /> : null}
+            <span>{user?.login}</span>
+          </div>
+          <button type="button" className="quiet" onClick={signOut}>Sign out</button>
+        </div>
       </aside>
       <main className="main">{page}</main>
     </div>
