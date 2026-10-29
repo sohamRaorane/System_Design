@@ -26,6 +26,14 @@ function fakeGitHub({ user = { id: 4242, login: 'octo-dev', name: 'Octo Dev', av
     calls.push({ method: req.method, path: u.pathname, auth: auth(req), body });
     const p = u.pathname;
     let m;
+    if (p === '/login/oauth/authorize') {
+      // the real page asks the user to approve; the fake approves at once
+      const back = new URL(u.searchParams.get('redirect_uri'));
+      back.searchParams.set('code', 'good-code');
+      back.searchParams.set('state', u.searchParams.get('state'));
+      res.writeHead(302, { location: back.toString() });
+      return res.end();
+    }
     if (p === '/login/oauth/access_token') {
       const tok = state.codes.get(body.code);
       return tok ? json(res, 200, { access_token: tok, token_type: 'bearer', scope: '' }) : json(res, 200, { error: 'bad_verification_code', error_description: 'The code passed is incorrect or expired.' });
