@@ -63,7 +63,7 @@ async function createApp({
   const cfg = config instanceof RuntimeConfig ? config : new RuntimeConfig(config, { logger });
   const metrics = createMetrics(clock);
   const faults = createFaults();
-  const db = await openDatabase({ databaseUrl: env.databaseUrl, dbPath: env.dbPath, logger });
+  const db = await openDatabase({ databaseUrl: env.databaseUrl, dbPath: env.dbPath, logger, pgSchema: env.pgSchema });
   const localData = !env.databaseUrl && env.dbPath !== ':memory:';
   const blobStore = blob || new LocalBlobStore(env.coldDir);
   const repo = new TraceRepo({ db, faults, clock, metrics });

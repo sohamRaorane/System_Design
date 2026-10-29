@@ -5,12 +5,12 @@
 const { SqliteDb } = require('./sqlite');
 const { migrate } = require('./migrations');
 
-async function openDatabase({ databaseUrl, dbPath = 'data/telemetry.db', logger } = {}) {
+async function openDatabase({ databaseUrl, dbPath = 'data/telemetry.db', logger, pgSchema } = {}) {
   let db;
   try {
     if (databaseUrl) {
       const { PostgresDb } = require('./postgres');
-      db = new PostgresDb(databaseUrl);
+      db = new PostgresDb(databaseUrl, { schema: pgSchema });
     } else {
       db = new SqliteDb(dbPath);
     }

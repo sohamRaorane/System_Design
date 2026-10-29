@@ -16,6 +16,8 @@ function readEnv(e = process.env) {
     port,
     logLevel: e.LOG_LEVEL || 'info',
     databaseUrl: e.DATABASE_URL || undefined,
+    // optional: keep this app's tables in their own Postgres schema (shared databases, tests)
+    pgSchema: e.PG_SCHEMA || undefined,
     dbPath: e.DB_PATH || 'data/telemetry.db',
     coldDir: e.COLD_DIR || 'cold',
     configPath: e.CONFIG_PATH || undefined,
