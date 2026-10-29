@@ -17,6 +17,7 @@ const { ProjectRepo } = require('./store/projectRepo');
 const { ProjectService } = require('./projects/service');
 const { projectsRouter } = require('./projects/routes');
 const { LocalBlobStore } = require('./blob/localStore');
+const { S3BlobStore } = require('./blob/s3Store');
 const { SpanQueue } = require('./queue/spanQueue');
 const { Aggregator } = require('./aggregate/aggregator');
 const { Sampler } = require('./sample/sampler');
@@ -65,7 +66,7 @@ async function createApp({
   const faults = createFaults();
   const db = await openDatabase({ databaseUrl: env.databaseUrl, dbPath: env.dbPath, logger, pgSchema: env.pgSchema });
   const localData = !env.databaseUrl && env.dbPath !== ':memory:';
-  const blobStore = blob || new LocalBlobStore(env.coldDir);
+  const blobStore = blob || (env.s3Enabled ? new S3BlobStore({ ...env.s3, fetchImpl: fetchImpl || fetch, clock }) : new LocalBlobStore(env.coldDir));
   const repo = new TraceRepo({ db, faults, clock, metrics });
   const breaker = new CircuitBreaker({ config: cfg, clock, metrics, logger });
   if (spillDir === undefined) spillDir = localData ? path.join(path.dirname(env.dbPath), 'spill') : null;
