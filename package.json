@@ -19,6 +19,7 @@
     "reset": "npm run reset -w @system-design/collector",
     "loadgen": "npm run loadgen -w @system-design/loadgen",
     "loadgen:burst": "npm run loadgen:burst -w @system-design/loadgen",
-    "reconcile": "npm run reconcile -w @system-design/loadgen"
+    "reconcile": "npm run reconcile -w @system-design/loadgen",
+    "secrets": "node tools/scripts/generate-secrets.js"
   }
 }

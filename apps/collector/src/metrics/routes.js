@@ -10,6 +10,11 @@ function metricsRouter(ctx) {
   router.get('/metrics', ctx.auth.operatorGuard, async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
   router.get('/api/pipeline', ctx.auth.requireUser, async (req, res) => res.json(await snapshot(ctx.metrics, ctx)));
 
+  // Liveness for the hosting platform: the process is up and serving. Deliberately ignores
+  // the database and breaker, so a storage outage never triggers a restart that would throw
+  // away the batches waiting safely in memory. /health is the detailed readiness view.
+  router.get('/livez', (req, res) => res.json({ status: 'alive' }));
+
   router.get('/health', async (req, res) => {
     const reasons = [];
     if (ctx.breaker.state === 'open') reasons.push('circuit breaker open (storage writes paused)');
