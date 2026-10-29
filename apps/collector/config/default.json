@@ -5,7 +5,7 @@
   "keep_incomplete_traces": true,
   "backpressure_sampling_factor": 0.25,
   "trace_timeout_ms": 30000,
-  "settle_window_ms": 500,
+  "settle_window_ms": 6000,
   "max_spans_per_trace": 1000,
   "max_open_traces": 50000,
   "queue_soft_limit": 5000,
