@@ -97,13 +97,60 @@ function validateSpan(raw, nowMs = Date.now()) {
     }
   }
 
+  const extra = checkOptional(raw, errors);
+
   if (errors.length) return { errors };
 
   const skewed = start_time > nowMs + FUTURE_SKEW_MS || start_time < nowMs - PAST_SKEW_MS;
   return {
-    span: { trace_id, span_id, parent_span_id, service, operation, start_time, end_time, status, attributes },
+    span: { trace_id, span_id, parent_span_id, service, operation, start_time, end_time, status, attributes, ...extra },
     skewed,
   };
+}
+
+const KINDS = new Set(['UNSPECIFIED', 'INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER']);
+const MAX_EVENTS = 32;
+const MAX_EVENTS_BYTES = 16 * 1024;
+
+const isFlatPrimitiveMap = (o, maxKeys) =>
+  o !== null && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length <= maxKeys &&
+  Object.values(o).every((v) => typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)));
+
+/** Optional fields carried from OTLP: kind, status message, events, resource, scope, duration_us. */
+function checkOptional(raw, errors) {
+  const out = {};
+  if (raw.kind !== undefined && raw.kind !== null) {
+    if (typeof raw.kind !== 'string' || !KINDS.has(raw.kind)) errors.push({ field: 'kind', reason: 'unknown span kind' });
+    else out.kind = raw.kind;
+  }
+  if (raw.status_message !== undefined && raw.status_message !== null) {
+    if (typeof raw.status_message !== 'string' || raw.status_message.length > 512) errors.push({ field: 'status_message', reason: 'string, max 512 chars' });
+    else out.status_message = raw.status_message;
+  }
+  if (raw.duration_us !== undefined && raw.duration_us !== null) {
+    if (!Number.isInteger(raw.duration_us) || raw.duration_us < 0) errors.push({ field: 'duration_us', reason: 'non-negative integer' });
+    else out.duration_us = raw.duration_us;
+  }
+  if (raw.scope !== undefined && raw.scope !== null) {
+    if (typeof raw.scope !== 'string' || raw.scope.length > 128) errors.push({ field: 'scope', reason: 'string, max 128 chars' });
+    else out.scope = raw.scope;
+  }
+  if (raw.resource !== undefined && raw.resource !== null) {
+    if (!isFlatPrimitiveMap(raw.resource, 16)) errors.push({ field: 'resource', reason: 'flat object, max 16 keys' });
+    else out.resource = raw.resource;
+  }
+  if (raw.events !== undefined && raw.events !== null) {
+    const ev = raw.events;
+    const ok = Array.isArray(ev) && ev.length <= MAX_EVENTS && ev.every((e) =>
+      e && typeof e === 'object' && typeof e.name === 'string' && e.name.length <= 128 &&
+      (e.time === null || e.time === undefined || Number.isInteger(e.time)) &&
+      (e.attributes === undefined || isFlatPrimitiveMap(e.attributes, 16)));
+    if (!ok) errors.push({ field: 'events', reason: `array of max ${MAX_EVENTS} { name, time, attributes }` });
+    else if (Buffer.byteLength(JSON.stringify(ev)) > MAX_EVENTS_BYTES) errors.push({ field: 'events', reason: 'serialized size max 16 KB' });
+    else out.events = ev;
+  }
+  if (raw.attributes_truncated === true) out.attributes_truncated = true;
+  return out;
 }
 
 module.exports = { validateSpan };

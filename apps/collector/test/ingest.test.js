@@ -32,7 +32,7 @@ test('T1 wrong content type -> 415 (E11)', async () => {
 test('T1 too many spans -> 413, oversize body -> 413 (E3)', async () => {
   const many = Array.from({ length: 1001 }, (_, i) => wire({ span_id: i.toString(16).padStart(16, '0') }));
   assert.equal((await post(url, { spans: many })).status, 413);
-  const big = { spans: [wire({ attributes: { x: 'y'.repeat(1_100_000) } })] };
+  const big = { spans: [wire({ attributes: { x: 'y'.repeat(4_300_000) } })] };
   assert.equal((await post(url, big)).status, 413);
 });
 
