@@ -37,6 +37,7 @@ const { queryRouter } = require('./query/routes');
 const { controlRouter } = require('./control/routes');
 const { metricsRouter } = require('./metrics/routes');
 const { webRouter } = require('./web');
+const { RateLimiter } = require('./util/rateLimit');
 
 async function createApp({
   env: envOverrides = {},
@@ -83,6 +84,9 @@ async function createApp({
 
   const ctx = { env, config: cfg, clock, metrics, faults, db, repo, accounts, projects, projectService, blob: blobStore, breaker, batch, logger, jwt, box, github };
   ctx.auth = authMiddleware(ctx);
+  const ingestBuckets = new RateLimiter({ ratePerSec: env.limits.ingestRps, burst: env.limits.ingestRps * 2, clock });
+  ctx.ingestLimiter = { check: (projectId) => ingestBuckets.take(projectId) };
+  ctx.authLimiter = new RateLimiter({ ratePerSec: env.limits.authPerMin / 60, burst: env.limits.authPerMin, clock });
   ctx.resolveIngestProject = (req) => projectService.resolve(req);
   ctx.loadtests = new LoadTestManager(ctx);
   ctx.onSpansAccepted = (projectId, spans) => {
