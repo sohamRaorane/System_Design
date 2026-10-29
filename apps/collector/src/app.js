@@ -22,6 +22,7 @@ const { ingestRouter } = require('./ingest/routes');
 const { queryRouter } = require('./query/routes');
 const { controlRouter } = require('./control/routes');
 const { metricsRouter } = require('./metrics/routes');
+const { webRouter } = require('./web');
 
 async function createApp({
   clock = systemClock,
@@ -35,6 +36,7 @@ async function createApp({
   adminToken = process.env.ADMIN_TOKEN || '',
   rng = Math.random,
   hash,
+  webDist = process.env.WEB_DIST,
 } = {}) {
   const cfg = config instanceof RuntimeConfig ? config : new RuntimeConfig(config, { logger });
   const metrics = createMetrics(clock);
@@ -57,11 +59,11 @@ async function createApp({
 
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.static(path.join(__dirname, '..', 'public')));
   app.use(ingestRouter(ctx));
   app.use(queryRouter(ctx));
   app.use(controlRouter(ctx));
   app.use(metricsRouter(ctx));
+  if (webDist) app.use(webRouter(webDist));
 
   app.use((req, res) => res.status(404).json({ error: 'not_found' }));
   // eslint-disable-next-line no-unused-vars
