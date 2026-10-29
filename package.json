@@ -13,6 +13,8 @@
   "scripts": {
     "start": "npm run start -w @system-design/collector",
     "dev": "npm run dev -w @system-design/collector",
+    "dev:web": "npm run dev -w @system-design/web",
+    "build:web": "npm run build -w @system-design/web",
     "test": "npm test --workspaces --if-present",
     "reset": "npm run reset -w @system-design/collector",
     "loadgen": "npm run loadgen -w @system-design/loadgen",
