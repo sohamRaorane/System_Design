@@ -1,0 +1,32 @@
+flowchart LR
+  subgraph apps["Your applications"]
+    A1["Service A<br/>OpenTelemetry SDK"]
+    A2["Service B<br/>OpenTelemetry SDK"]
+  end
+  subgraph vercel["Vercel"]
+    WEB["Dashboard<br/>React + Vite"]
+  end
+  subgraph render["Render (free web service)"]
+    direction LR
+    ING["Ingest<br/>OTLP protobuf / JSON<br/>key check, rate limit"] --> Q["Bounded queue<br/>soft / hard limit"]
+    Q --> AGG["Aggregator<br/>group by trace, dedup,<br/>timeout, late-span merge"]
+    AGG --> SMP["Tail sampler<br/>errors + slow always kept"]
+    SMP --> BAT["Batch writer<br/>retry, circuit breaker,<br/>shed + spill"]
+    BAT --> HOT[("Hot store")]
+    HOT --> ARC["Archive worker"]
+    API["Dashboard API<br/>JWT + JWKS, projects,<br/>load tests, admin"]
+    LT["Load tester<br/>worker thread"]
+  end
+  NEON[("Neon Postgres<br/>traces, users, projects")]
+  R2[("Cloudflare R2<br/>cold archive")]
+  GH["GitHub App<br/>sign-in, pull requests"]
+
+  A1 -- "OTLP + x-api-key" --> ING
+  A2 -- "OTLP + x-api-key" --> ING
+  WEB -- "/api/* rewrite" --> API
+  API --- HOT
+  HOT -.-> NEON
+  ARC --> R2
+  API <--> GH
+  LT -- "traceparent" --> A1
+  LT -- "client spans" --> Q
