@@ -6,7 +6,7 @@ const path = require('node:path');
 const { backoffDelay, unref } = require('../util/common');
 
 class BatchProcessor {
-  constructor({ config, clock, metrics, repo, breaker, faults, spillDir, logger, rng = Math.random }) {
+  constructor({ config, clock, metrics, repo, breaker, faults, spillDir, logger, rng = Math.random, discard = () => false }) {
     this.config = config;
     this.clock = clock;
     this.metrics = metrics;
@@ -16,6 +16,7 @@ class BatchProcessor {
     this.spillDir = spillDir;
     this.logger = logger;
     this.rng = rng;
+    this.discard = discard; // (trace) -> true when it must not be written (its project was deleted)
     this.current = [];
     this.pending = []; // [{ traces, attempt }]
     this.flushTimer = null;
@@ -99,6 +100,8 @@ class BatchProcessor {
         return;
       }
       const head = this.pending[0];
+      head.traces = head.traces.filter((t) => !this.discard(t));
+      if (!head.traces.length) { this.pending.shift(); continue; }
       try {
         const storedAt = await this.repo.insertBatch(head.traces);
         if (this.pending[0] === head) this.pending.shift();
@@ -191,6 +194,11 @@ class BatchProcessor {
       this.metrics.c.replayed_spill_batches++;
     }
     if (files.length) setImmediate(() => this._pump());
+  }
+
+  /** Resolves when no write is in progress (a write already sent to the database finishes first). */
+  async idle() {
+    while (this.writing) await this.writing.catch(() => {});
   }
 
   findPending(projectId, traceId) {

@@ -231,6 +231,18 @@ class Aggregator {
     });
   }
 
+  /** A project was deleted: forget its open traces and tombstones without storing anything. */
+  dropProject(projectId) {
+    for (const [key, entry] of this.open) {
+      if (entry.projectId !== projectId) continue;
+      clearTimeout(entry.timeoutTimer);
+      clearTimeout(entry.settleTimer);
+      this.open.delete(key);
+    }
+    const prefix = projectId + '\0';
+    for (const key of this.tombstones.keys()) if (key.startsWith(prefix)) this.tombstones.delete(key);
+  }
+
   /** Finalize every open trace (graceful shutdown). */
   finalizeAll(cause = 'shutdown') {
     for (const entry of [...this.open.values()]) this.finalize(entry, cause);
