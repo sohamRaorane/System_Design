@@ -140,3 +140,19 @@ test('revoking a key stops ingest immediately; deleting a project removes its da
   assert.equal(await h.ctx.repo.count('hot', projectId), 0);
   assert.equal((await send(otlp('a'.repeat(32)), { 'x-api-key': key })).status, 401, 'keys of a deleted project stop working');
 });
+
+test('deleting a project discards its traces still in flight (open, or waiting in a batch)', async () => {
+  const pid2 = (await api(alice, '/api/projects', { method: 'POST', body: { name: 'Doomed' } })).body.project.id;
+  const span = (traceId, spanId) => ({ project_id: pid2, trace_id: traceId, span_id: spanId, parent_span_id: null, service: 'web', operation: 'GET /', start_time: Date.now(), end_time: Date.now() + 5, status: 'ERROR', attributes: {} });
+  h.ctx.aggregator.addSpan(span('d'.repeat(32), '1'.repeat(16)));          // still being assembled
+  const { fakeTrace } = require('./helpers');
+  const waiting = fakeTrace('e'.repeat(32), { reason: 'ERROR', status: 'ERROR' });
+  waiting.project_id = pid2;
+  h.ctx.batch.add(waiting);                                                  // kept, waiting for the next write
+  assert.equal((await api(alice, `/api/projects/${pid2}`, { method: 'DELETE' })).status, 200);
+  h.ctx.aggregator.finalizeAll();
+  await h.ctx.batch.flush();
+  await h.ctx.batch.drainAll();
+  assert.equal(await h.ctx.repo.count('hot', pid2), 0, 'no orphaned traces');
+  assert.equal(h.ctx.aggregator.openCount, 0);
+});

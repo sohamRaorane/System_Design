@@ -21,6 +21,7 @@ class ProjectService {
     this.live = new Map(); // projectId -> { rate, spans, lastSpanAt, touchedAt, firstSeen }
     this.keyUsedAt = new Map();
     this.listeners = new Set(); // (projectId, event) — e.g. first trace
+    this.deleted = new Set(); // projects deleted while this process runs: in-flight data is discarded
   }
 
   async load() {
@@ -32,6 +33,7 @@ class ProjectService {
   }
 
   forget(projectId) {
+    this.deleted.add(projectId);
     this.settings.delete(projectId);
     this.live.delete(projectId);
     for (const [prefix, v] of this.keyCache) if (v.row?.project_id === projectId) this.keyCache.delete(prefix);
@@ -96,6 +98,10 @@ class ProjectService {
   }
 
   // ---------- live activity ----------
+
+  isDeleted(projectId) {
+    return this.deleted.has(projectId);
+  }
 
   onSpansAccepted(projectId, spans) {
     const now = this.clock.now();
