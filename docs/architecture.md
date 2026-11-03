@@ -1,10 +1,9 @@
 # Architecture
 
-![Architecture diagram](diagram/architecture-v1.png)
+![The system as built](diagram/architecture-v2.svg)
 
-> The diagram is the Phase 1 design reference. Known diagram errata to fix in Phase 7:
-> two sections are numbered "6", and some labels are garbled ("Dseone 1 HERKR" → Hot storage,
-> "Rletiy Worker" → Archive worker).
+The original design diagram is `diagram/architecture-v1.png`; its label errata are listed in
+`diagram/README.md`.
 
 ## Product in one paragraph
 
@@ -14,7 +13,7 @@ deploying (anywhere), the app exports OTLP traces to our collector using a per-p
 The developer can then load-test their deployed URL from our UI and watch, in plain language, how
 traces move through the pipeline and which ones the tail sampler kept and why.
 
-## Pipeline (what exists today, `apps/collector`)
+## Pipeline (`apps/collector`)
 
 ```
 POST /v1/traces → validate → SpanQueue (bounded; soft/hard limits, 429 + Retry-After)
@@ -34,10 +33,10 @@ Control plane: RuntimeConfig (validated, versioned, hot-reload), faults, /metric
 |---|---|---|
 | G1 | ~~`/v1/traces` accepts our own flat JSON, not OTLP~~ — closed: OTLP protobuf + JSON | 1 ✔ |
 | G2 | ~~Real traces finalized after 500 ms; later services' spans dropped as late~~ — closed: 6 s settle window, late spans merged into kept traces | 1 ✔ |
-| G3 | No users, projects or tenant isolation | 2 |
-| G4 | Control endpoints are open when `ADMIN_TOKEN` is unset | 2 |
-| G5 | SQLite, spill and `cold/` live on local disk; Render Free disk is ephemeral (storage is now an async adapter + blob store interface, ready for Postgres/R2) | 5 |
-| G6 | Collector is long-running and stateful, so it cannot run on Vercel | 5 (Render) |
+| G3 | ~~No users, projects or tenant isolation~~: closed by GitHub sign-in, projects, ingest keys, per-project storage keys | 2 ✔ |
+| G4 | ~~Control endpoints open when `ADMIN_TOKEN` is unset~~: closed; production refuses to start without it | 2 ✔ |
+| G5 | ~~Data on Render's ephemeral disk~~: closed; Postgres (Neon) for data, R2 for the archive. Spill files during a long database outage still use local disk (lost on restart). | 5 ✔ |
+| G6 | ~~Collector cannot run on Vercel~~: closed; collector on Render, dashboard on Vercel with an /api rewrite | 5 ✔ |
 | G7 | Aggregator state is in-memory, so only one instance is correct | documented; trace-id routing after v1.0 |
 | G8 | ~~Archived search by root service only; sync gunzip~~ — closed in the async storage refactor | 1 ✔ |
 
@@ -64,4 +63,4 @@ See `docs/adr/` for the reasoning behind each choice.
 | 4 | Verified load testing + demo traffic | 60 s test → live charts + kept traces |
 | 5 | Postgres, R2, Render + Vercel deploy | Full flow on public URLs |
 | 6 | Rate limits, retention, async cold reads, self-metrics, Playwright, failure drills | All 8 drills pass in cloud |
-| 7 | Plain-language UI, corrected diagram, docs | Tag v1.0.0 |
+| 7 | Plain-language UI, theme switch, phone layout, corrected diagram, docs | Tag v1.0.0 |
