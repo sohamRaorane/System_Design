@@ -88,7 +88,7 @@ function Shell() {
         </nav>
         <div className="rail-foot">
           <div className="user">
-            {user?.avatar_url ? <img src={user.avatar_url} alt="" width="22" height="22" /> : null}
+            {user?.avatar_url ? <img src={user.avatar_url} alt="" width="22" height="22" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : null}
             <span>{user?.login}</span>
           </div>
           <ThemeSwitch />
