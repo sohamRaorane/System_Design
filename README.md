@@ -32,6 +32,17 @@ OTLP (protobuf/JSON) ─► ingest: key check, rate limit ─► bounded queue (
 More detail: the [architecture](docs/architecture.md), the [decision records](docs/adr), how each
 [failure scenario](docs/failure-drills.md) is handled, and the [deployment runbook](docs/deployment.md).
 
+## One-click demo on Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\demo\start-demo.ps1
+```
+
+It installs and builds everything, starts the collector (serving the dashboard), creates a
+**Demo shop** project, runs the OpenTelemetry-instrumented demo shop with steady checkout
+traffic, and opens the dashboard: sign in with the development sign-in, name `demo`.
+Re-run faster with `-SkipInstall`; stop with `scripts\demo\stop-demo.ps1`.
+
 ## Run it locally in 90 seconds
 
 Needs Node.js 22.13 or newer. No database to install: local runs use the built-in SQLite.
