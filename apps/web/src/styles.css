@@ -338,3 +338,12 @@ input[type='range'], input[type='checkbox'] { accent-color: var(--signal); }
 .cfg-row input[type='checkbox'] { justify-self: start; width: 18px; height: 18px; }
 @media (max-width: 640px) { .cfg-row { grid-template-columns: 1fr; } }
 .drill button { white-space: nowrap; flex: none; }
+
+/* ---------- theme switch ---------- */
+.theme-switch { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: var(--r-sm); overflow: hidden; align-self: flex-start; }
+.theme-switch button { background: transparent; color: var(--ink-2); border: 0; border-radius: 0; padding: 5px 10px; font-weight: 500; }
+.theme-switch button + button { border-left: 1px solid var(--rule-strong); }
+.theme-switch button[aria-checked='true'] { background: var(--ink); color: var(--paper); }
+.theme-switch button:hover { filter: none; background: var(--surface); }
+.theme-switch button[aria-checked='true']:hover { background: var(--ink); }
+
