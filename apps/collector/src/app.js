@@ -71,7 +71,8 @@ async function createApp({
   const repo = new TraceRepo({ db, faults, clock, metrics });
   const breaker = new CircuitBreaker({ config: cfg, clock, metrics, logger });
   if (spillDir === undefined) spillDir = localData ? path.join(path.dirname(env.dbPath), 'spill') : null;
-  const batch = new BatchProcessor({ config: cfg, clock, metrics, repo, breaker, faults, spillDir, logger, rng });
+  // `ctx` is defined below; the closure is only called later, when a batch is written
+  const batch = new BatchProcessor({ config: cfg, clock, metrics, repo, breaker, faults, spillDir, logger, rng, discard: (t) => Boolean(ctx.projectService?.isDeleted(t.project_id)) });
 
   const signingKey = loadSigningKey({ pem: env.jwtPrivateKey, devKeyFile: localData ? path.join(path.dirname(env.dbPath), 'jwt-dev-key.pem') : null, logger });
   const jwt = new Jwt({ privateKey: signingKey, previousPublicKeys: env.jwtPreviousPublicKeys, clock });

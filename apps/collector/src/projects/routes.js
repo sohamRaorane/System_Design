@@ -83,8 +83,10 @@ function projectsRouter(ctx) {
 
   router.delete('/api/projects/:pid', loadProject, async (req, res) => {
     if (req.project.id === 'default') return res.status(400).json({ error: 'cannot_delete_default' });
+    projectService.forget(req.project.id); // first, so nothing in flight is written after the delete
+    ctx.aggregator.dropProject(req.project.id);
+    await ctx.batch.idle(); // a write already sent to the database must land before we delete
     await projects.remove(req.project.id);
-    projectService.forget(req.project.id);
     res.json({ ok: true });
   });
 
