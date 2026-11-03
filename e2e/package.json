@@ -1,0 +1,12 @@
+{
+  "name": "@system-design/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser end-to-end tests: real dashboard + real collector + fake GitHub, in Chromium",
+  "scripts": {
+    "e2e": "node --test --test-concurrency=1 flows.e2e.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

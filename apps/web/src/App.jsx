@@ -11,6 +11,7 @@ import { Traces } from './pages/Traces.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { Connect } from './pages/Connect.jsx';
 import { LoadTest } from './pages/LoadTest.jsx';
+import { Admin } from './pages/Admin.jsx';
 
 export function Redirect({ to }) {
   const { navigate } = useRouter();
@@ -53,6 +54,7 @@ function Shell() {
 
   let page;
   if (path === '/projects') page = <Projects />;
+  else if (path === '/admin') page = <Admin />;
   else if (m && PROJECT_PAGES[m.section]) {
     if (project.error) page = <div className="empty"><p>{project.error.status === 404 ? 'This project does not exist, or it belongs to someone else.' : project.error.message}</p><p><Link to="/projects">Back to your projects</Link></p></div>;
     else page = PROJECT_PAGES[m.section]({ pid, project: proj, base, traceId: m.section === 'traces' ? m.rest : undefined, onChanged: project.refresh });
@@ -81,6 +83,7 @@ function Shell() {
               <Link to={`${base}/settings`}>Settings</Link>
             </>
           ) : <Link to="/projects">Projects</Link>}
+          {user?.admin ? <Link to="/admin">Pipeline admin</Link> : null}
         </nav>
         <div className="rail-foot">
           <div className="user">

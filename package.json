@@ -5,7 +5,8 @@
   "description": "Group 21 — OpenTelemetry pipeline with tail-based sampling, batch indexing and cold archival",
   "workspaces": [
     "apps/*",
-    "tools/*"
+    "tools/*",
+    "e2e"
   ],
   "engines": {
     "node": ">=22.13"
@@ -20,6 +21,7 @@
     "loadgen": "npm run loadgen -w @system-design/loadgen",
     "loadgen:burst": "npm run loadgen:burst -w @system-design/loadgen",
     "reconcile": "npm run reconcile -w @system-design/loadgen",
-    "secrets": "node tools/scripts/generate-secrets.js"
+    "secrets": "node tools/scripts/generate-secrets.js",
+    "e2e": "npm run e2e -w @system-design/e2e"
   }
 }

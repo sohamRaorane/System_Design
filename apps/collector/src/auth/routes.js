@@ -8,6 +8,7 @@ const express = require('express');
 const crypto = require('node:crypto');
 const { parseCookies, serializeCookie } = require('../util/cookies');
 const { isAdminLogin } = require('./middleware');
+const { limitByIp } = require('../util/rateLimit');
 
 const REFRESH_COOKIE = 'tp_refresh';
 const STATE_COOKIE = 'tp_oauth';
@@ -23,6 +24,7 @@ function safeNext(next) {
 function authRouter(ctx) {
   const { env, accounts, jwt, github, logger } = ctx;
   const router = express.Router();
+  const limited = ctx.authLimiter ? limitByIp(ctx.authLimiter, { message: 'Too many sign-in attempts from your network. Wait a minute and try again.' }) : (req, res, next) => next();
   const cookieOpts = { secure: env.cookieSecure, path: '/api/auth', sameSite: 'Lax' };
   const callbackUrl = () => `${env.webOrigin || env.publicUrl}/api/auth/github/callback`;
 
@@ -51,7 +53,7 @@ function authRouter(ctx) {
     res.json({ github: env.githubEnabled, devLogin: env.devLogin, githubApp: env.githubAppEnabled, appSlug: env.github.appSlug || null });
   });
 
-  router.get('/api/auth/github/start', (req, res) => {
+  router.get('/api/auth/github/start', limited, (req, res) => {
     if (!env.githubEnabled) return res.status(503).json({ error: 'github_not_configured', message: 'Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET on the collector.' });
     const state = crypto.randomBytes(16).toString('base64url');
     const next = safeNext(req.query.next);
@@ -59,7 +61,7 @@ function authRouter(ctx) {
     res.redirect(302, github.authorizeUrl({ redirectUri: callbackUrl(), state }));
   });
 
-  router.get('/api/auth/github/callback', async (req, res) => {
+  router.get('/api/auth/github/callback', limited, async (req, res) => {
     const fail = (reason) => res.redirect(302, `${env.webOrigin || ''}/login?error=${encodeURIComponent(reason)}`);
     const [state, next] = String(parseCookies(req.get('cookie'))[STATE_COOKIE] || '').split('|');
     res.append('Set-Cookie', serializeCookie(STATE_COOKIE, '', { ...cookieOpts, maxAgeS: 0 }));
@@ -78,7 +80,7 @@ function authRouter(ctx) {
     }
   });
 
-  router.post('/api/auth/refresh', csrf, async (req, res) => {
+  router.post('/api/auth/refresh', limited, csrf, async (req, res) => {
     const token = parseCookies(req.get('cookie'))[REFRESH_COOKIE];
     const rotated = await accounts.rotateSession(token, req.get('user-agent'));
     if (!rotated) {
@@ -103,7 +105,7 @@ function authRouter(ctx) {
 
   if (env.devLogin) {
     // Local development and automated tests only; disabled whenever NODE_ENV=production.
-    router.post('/api/auth/dev-login', csrf, express.json({ limit: '10kb' }), async (req, res) => {
+    router.post('/api/auth/dev-login', limited, csrf, express.json({ limit: '10kb' }), async (req, res) => {
       const login = String(req.body?.login || '').trim().toLowerCase();
       if (!/^[a-z0-9-]{1,39}$/.test(login)) return res.status(400).json({ error: 'invalid_login', message: 'Use letters, digits and dashes.' });
       const user = await accounts.upsertDevUser(login);

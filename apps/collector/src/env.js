@@ -49,6 +49,12 @@ function readEnv(e = process.env) {
       secretAccessKey: e.S3_SECRET_ACCESS_KEY || e.R2_SECRET_ACCESS_KEY || '',
       prefix: e.S3_PREFIX || 'archive/',
     },
+    limits: {
+      // OTLP requests per second per project (SDKs send one batch per service every ~5 s)
+      ingestRps: Number(e.INGEST_RPS_PER_PROJECT || 50),
+      // sign-in / session requests per minute per client IP
+      authPerMin: Number(e.AUTH_REQUESTS_PER_MIN || 30),
+    },
     loadtest: {
       allowPrivateTargets: bool(e.LOADTEST_ALLOW_PRIVATE_TARGETS, !production),
       maxRps: Number(e.LOADTEST_MAX_RPS || 50),

@@ -57,3 +57,21 @@ jobs:
         run: if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
       - name: Test collector against Postgres
         run: npm test -w @system-design/collector
+
+  e2e:
+    name: browser end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        shell: bash
+        run: if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+      - name: Install Chromium
+        run: npx -w @system-design/e2e playwright install --with-deps chromium
+      - name: Build dashboard
+        run: npm run build:web
+      - name: End-to-end
+        run: npm run e2e
