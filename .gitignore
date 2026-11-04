@@ -17,6 +17,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.demo.example
 *.pem
 
 # logs & reports

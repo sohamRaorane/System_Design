@@ -43,6 +43,13 @@ It installs and builds everything, starts the collector (serving the dashboard),
 traffic, and opens the dashboard: sign in with the development sign-in, name `demo`.
 Re-run faster with `-SkipInstall`; stop with `scripts\demo\stop-demo.ps1`.
 
+To add **Sign in with GitHub** and the instrumentation pull request, register a GitHub App
+(Callback URL `http://localhost:4318/api/auth/github/callback`, Setup URL
+`http://localhost:4318/api/github/setup`, repository permissions Contents and Pull requests
+read & write), copy `.env.demo.example` to `.env.demo`, fill it in, put the downloaded `.pem`
+next to it, and check it with `node scripts\demo\check-github.js`. `.env.demo` and `*.pem` are
+gitignored; the launcher picks them up on every start.
+
 ## Run it locally in 90 seconds
 
 Needs Node.js 22.13 or newer. No database to install: local runs use the built-in SQLite.

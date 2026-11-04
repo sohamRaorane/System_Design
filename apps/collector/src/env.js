@@ -7,6 +7,12 @@ const list = (v) => String(v || '').split(',').map((s) => s.trim().toLowerCase()
 const trimSlash = (v) => (v ? String(v).replace(/\/+$/, '') : v);
 /** Render and other dashboards store multi-line PEM keys with literal "\n"; restore them. */
 const pem = (v) => (v ? String(v).replace(/\\n/g, '\n').trim() : undefined);
+/** A PEM given inline, or read from a file path (handy for a downloaded GitHub App key). */
+const pemOrFile = (inline, file) => {
+  if (inline) return pem(inline);
+  if (!file) return undefined;
+  return pem(require('fs').readFileSync(file, 'utf8'));
+};
 
 function readEnv(e = process.env) {
   const production = e.NODE_ENV === 'production';
@@ -37,7 +43,7 @@ function readEnv(e = process.env) {
       clientSecret: e.GITHUB_CLIENT_SECRET || '',
       appId: e.GITHUB_APP_ID || '',
       appSlug: e.GITHUB_APP_SLUG || '',
-      appPrivateKey: pem(e.GITHUB_APP_PRIVATE_KEY),
+      appPrivateKey: pemOrFile(e.GITHUB_APP_PRIVATE_KEY, e.GITHUB_APP_PRIVATE_KEY_FILE),
       apiUrl: trimSlash(e.GITHUB_API_URL) || 'https://api.github.com',
       webUrl: trimSlash(e.GITHUB_WEB_URL) || 'https://github.com',
     },
@@ -62,7 +68,7 @@ function readEnv(e = process.env) {
     },
   };
   env.githubEnabled = Boolean(env.github.clientId && env.github.clientSecret);
-  env.githubAppEnabled = Boolean(env.github.appId && env.github.appPrivateKey);
+  env.githubAppEnabled = Boolean(env.github.appId && env.github.appPrivateKey && env.github.appSlug);
   env.s3Enabled = Boolean(env.s3.endpoint && env.s3.bucket && env.s3.accessKeyId && env.s3.secretAccessKey);
   return env;
 }

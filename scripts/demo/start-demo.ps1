@@ -59,6 +59,33 @@ if (-not (Test-Path (Join-Path $Root 'apps\web\dist\index.html'))) { Fail 'The d
 
 New-Item -ItemType Directory -Force -Path $Data | Out-Null
 
+# Optional GitHub App settings (sign in with GitHub, pull requests): .env.demo at the repo root.
+$extraEnv = ''
+$githubOn = $false
+$envDemo = Join-Path $Root '.env.demo'
+if (Test-Path $envDemo) {
+  Step 'Reading GitHub App settings from .env.demo'
+  foreach ($raw in Get-Content $envDemo) {
+    $line = $raw.Trim()
+    if ($line -eq '' -or $line.StartsWith('#') -or -not $line.Contains('=')) { continue }
+    $i = $line.IndexOf('=')
+    $k = $line.Substring(0, $i).Trim()
+    $v = $line.Substring($i + 1).Trim().Trim('"').Trim("'")
+    if ($v -eq '') { continue }
+    if ($k -eq 'GITHUB_APP_PRIVATE_KEY_FILE') {
+      $kp = if ([System.IO.Path]::IsPathRooted($v)) { $v } else { Join-Path $Root $v }
+      if (-not (Test-Path $kp)) { Fail "GITHUB_APP_PRIVATE_KEY_FILE points to $kp, which does not exist. Put the downloaded .pem there." }
+      $v = (Resolve-Path $kp).Path
+    }
+    if ($k -eq 'GITHUB_CLIENT_ID') { $githubOn = $true }
+    $extraEnv += "set `"$k=$v`"`r`n"
+  }
+  Push-Location $Root
+  node scripts\demo\check-github.js
+  if ($LASTEXITCODE -ne 0) { Write-Host 'Continuing anyway: development sign-in still works, but fix the FIX lines for GitHub sign-in and pull requests.' -ForegroundColor Yellow }
+  Pop-Location
+}
+
 Step 'Starting the collector (its own window)'
 $collectorCmd = Join-Path $Data 'run-collector.cmd'
 @"
@@ -69,6 +96,7 @@ set DEV_LOGIN=true
 set WEB_DIST=$Root\apps\web\dist
 set WEB_ORIGIN=$Base
 set PUBLIC_URL=$Base
+$extraEnv
 node src\server.js
 echo.
 echo The collector stopped.
@@ -142,7 +170,8 @@ Write-Host '============================================================' -Foreg
 Write-Host ' Tracepipe demo is running' -ForegroundColor Green
 Write-Host '============================================================' -ForegroundColor Green
 Write-Host " Dashboard:   $Base   (opened in your browser)"
-Write-Host ' Sign in:     Development sign-in, name: demo'
+if ($githubOn) { Write-Host ' Sign in:     Sign in with GitHub (or Development sign-in, name: demo)' }
+else { Write-Host ' Sign in:     Development sign-in, name: demo   (add .env.demo for GitHub sign-in)' }
 Write-Host " Project:     Demo shop  ($Base/p/$projectId/overview)"
 Write-Host ' Demo shop:   http://localhost:3000   (try /api/products)'
 Write-Host ''

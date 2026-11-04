@@ -79,6 +79,15 @@ test('production refuses unsafe configuration', () => {
   assert.equal(readEnv({ NODE_ENV: 'production', DEV_LOGIN: 'true' }).devLogin, false, 'dev login can never be on in production');
   assert.equal(readEnv({ NODE_ENV: 'production' }).allowAnonymousIngest, false);
   assert.equal(readEnv({ JWT_PRIVATE_KEY: 'a\\nb' }).jwtPrivateKey, 'a\nb', 'escaped newlines restored');
+  {
+    const f = require('node:path').join(require('node:os').tmpdir(), `tp-app-key-${process.pid}.pem`);
+    require('node:fs').writeFileSync(f, key.export({ type: 'pkcs1', format: 'pem' }));
+    const e = readEnv({ GITHUB_APP_ID: '1', GITHUB_APP_SLUG: 'x', GITHUB_APP_PRIVATE_KEY_FILE: f });
+    assert.equal(e.githubAppEnabled, true, 'App key can be read from a file');
+    assert.match(e.github.appPrivateKey, /BEGIN RSA PRIVATE KEY/);
+    assert.equal(readEnv({ GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY_FILE: f }).githubAppEnabled, false, 'the slug is required for the install link');
+    require('node:fs').unlinkSync(f);
+  }
 });
 
 // ---------------- HTTP flows ----------------

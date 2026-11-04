@@ -49,7 +49,8 @@ class GitHubClient {
   // ---------- REST ----------
 
   async request(path, { token, method = 'GET', body, accept = 'application/vnd.github+json', raw = false } = {}) {
-    const res = await this.fetch(path.startsWith('http') ? path : this.apiUrl + path, {
+    const url = path.startsWith('http') ? path : this.apiUrl + path;
+    const init = {
       method,
       headers: {
         accept,
@@ -59,12 +60,23 @@ class GitHubClient {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    };
+    let res = await this.fetch(url, init);
+    // GitHub answers the odd 5xx; a read is safe to repeat once.
+    if (method === 'GET' && !raw && res.status >= 500) {
+      await new Promise((r) => setTimeout(r, 400));
+      res = await this.fetch(url, init);
+    }
     if (raw) return res;
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!res.ok) throw new GitHubError(res.status, (data && data.message) || `GitHub API ${method} ${path} failed (${res.status})`, data);
+    if (!res.ok) {
+      const id = res.headers && res.headers.get ? res.headers.get('x-github-request-id') : null;
+      const snippet = typeof data === 'string' ? data.slice(0, 160).replace(/\s+/g, ' ') : '';
+      const detail = (data && data.message) || `GitHub API ${method} ${path} failed (${res.status})${snippet ? `: ${snippet}` : ''}${id ? ` [request ${id}]` : ''}`;
+      throw new GitHubError(res.status, detail, data);
+    }
     return data;
   }
 
