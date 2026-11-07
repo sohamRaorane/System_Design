@@ -29,6 +29,36 @@ export function ago(ts, now = Date.now()) {
 
 export const plural = (n, one, many = one + 's') => `${num(n)} ${n === 1 ? one : many}`;
 
+/** Clock time for dense engineering tables: 14:03:27. */
+export function clockTime(ts) {
+  if (!ts) return '–';
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+
+/** Compact "3d 4h" style durations for uptimes. */
+export function duration(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+export function pct(part, whole) {
+  if (!whole) return '–';
+  return `${Math.round((part / whole) * 1000) / 10}%`;
+}
+
+/** Percentile of a numeric list, using nearest-rank. */
+export function percentile(values, p) {
+  const list = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (!list.length) return null;
+  const idx = Math.min(list.length - 1, Math.max(0, Math.ceil((p / 100) * list.length) - 1));
+  return list[idx];
+}
+
 /** Why the sampler kept a trace, in words a person would use. */
 export const REASON_TEXT = {
   ERROR: 'Error',
@@ -44,7 +74,7 @@ export const REASON_HELP = {
 };
 
 /** Stable colour per service name for waterfall bars. */
-const SERVICE_COLOURS = ['#0E7470', '#56648F', '#8A5A9E', '#2F7F3B', '#9A6A1F', '#33729E', '#A0476B', '#5F7A2A'];
+const SERVICE_COLOURS = ['#2DD4BF', '#818CF8', '#C084FC', '#4ADE80', '#FBBF24', '#38BDF8', '#F472B6', '#A3E635'];
 export function serviceColour(name = '') {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;

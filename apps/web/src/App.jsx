@@ -1,18 +1,21 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './lib/api.js';
 import { useAuth } from './lib/auth.jsx';
 import { useData } from './lib/hooks.js';
 import { Link, match, useRouter } from './lib/router.jsx';
 import { Logo } from './components/Logo.jsx';
-import { ThemeSwitch } from './components/ThemeSwitch.jsx';
+import { Sidebar } from './components/Sidebar.jsx';
+import { Topbar } from './components/Topbar.jsx';
 import { Login } from './pages/Login.jsx';
 import { Projects } from './pages/Projects.jsx';
 import { Overview } from './pages/Overview.jsx';
 import { Traces } from './pages/Traces.jsx';
+import { Services } from './pages/Services.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { Connect } from './pages/Connect.jsx';
 import { LoadTest } from './pages/LoadTest.jsx';
 import { Admin } from './pages/Admin.jsx';
+import { Pipeline } from './pages/Pipeline.jsx';
 
 export function Redirect({ to }) {
   const { navigate } = useRouter();
@@ -24,16 +27,23 @@ export function Redirect({ to }) {
 const PROJECT_PAGES = {
   overview: (p) => <Overview {...p} />,
   traces: (p) => <Traces {...p} />,
+  services: (p) => <Services {...p} />,
   settings: (p) => <Settings {...p} />,
   connect: (p) => <Connect {...p} />,
   load: (p) => <LoadTest {...p} />,
+};
+
+const GLOBAL_PAGES = {
+  '/projects': <Projects />,
+  '/pipeline': <Pipeline />,
+  '/admin': <Admin />,
 };
 
 export function App() {
   const { status } = useAuth();
   const { path, search } = useRouter();
 
-  if (status === 'loading') return <div className="boot" aria-busy="true"><Logo /></div>;
+  if (status === 'loading') return <div className="boot" aria-busy="true"><Logo /><span className="sr-only">Loading session</span></div>;
   if (path === '/login') return status === 'signedIn' ? <Redirect to="/projects" /> : <Login />;
   if (status !== 'signedIn') return <Redirect to={`/login?next=${encodeURIComponent(path + search)}`} />;
   if (path === '/' || path === '/overview') return <Redirect to="/projects" />;
@@ -41,8 +51,9 @@ export function App() {
 }
 
 function Shell() {
-  const { path, navigate } = useRouter();
+  const { path } = useRouter();
   const { user, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const projects = useData(() => api.projects(), [], { every: 30000 });
 
   const m = match('/p/:pid/:section', path) || match('/p/:pid/:section/:rest', path);
@@ -50,52 +61,59 @@ function Shell() {
   const project = useData(() => (pid ? api.project(pid) : Promise.resolve(null)), [pid], { every: 15000 });
   const proj = project.data ? { ...project.data.project, setup: project.data.setup } : null;
   const base = pid ? `/p/${pid}` : '';
+  const section = m?.section || path.split('/').filter(Boolean)[0] || '';
   const known = projects.data?.projects?.some((p) => p.id === pid);
   useEffect(() => { if (pid && projects.data && !known) projects.refresh(); }, [pid, known]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setMenuOpen(false); }, [path]);
 
   let page;
-  if (path === '/projects') page = <Projects />;
-  else if (path === '/admin') page = <Admin />;
+  if (GLOBAL_PAGES[path]) page = GLOBAL_PAGES[path];
   else if (m && PROJECT_PAGES[m.section]) {
-    if (project.error) page = <div className="empty"><p>{project.error.status === 404 ? 'This project does not exist, or it belongs to someone else.' : project.error.message}</p><p><Link to="/projects">Back to your projects</Link></p></div>;
-    else page = PROJECT_PAGES[m.section]({ pid, project: proj, base, traceId: m.section === 'traces' ? m.rest : undefined, onChanged: project.refresh });
-  } else page = <div className="empty"><p>This page does not exist.</p><p><Link to="/projects">Go to your projects</Link></p></div>;
+    if (project.error) {
+      page = (
+        <div className="empty panel">
+          <p className="empty-title">{project.error.status === 404 ? 'This project does not exist, or it belongs to someone else.' : project.error.message}</p>
+          <p><Link to="/projects">Back to your projects</Link></p>
+        </div>
+      );
+    } else {
+      page = PROJECT_PAGES[m.section]({ pid, project: proj, base, traceId: m.section === 'traces' ? m.rest : undefined, onChanged: project.refresh });
+    }
+  } else if (path === '/projects') {
+    page = <Projects />;
+  } else {
+    page = (
+      <div className="empty panel">
+        <p className="empty-title">This page does not exist.</p>
+        <p><Link to="/projects">Go to your projects</Link></p>
+      </div>
+    );
+  }
 
   return (
-    <div className="shell">
-      <aside className="rail">
-        <Link to="/projects" className="brand"><Logo /> Tracepipe</Link>
-        {projects.data?.projects?.length ? (
-          <label className="field switcher">
-            <span className="sr-only">Project</span>
-            <select value={pid || ''} onChange={(e) => e.target.value && navigate(`/p/${e.target.value}/overview`)} aria-label="Project">
-              <option value="">All projects</option>
-              {projects.data.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-        ) : null}
-        <nav className="nav" aria-label="Main">
-          {pid ? (
-            <>
-              <Link to={`${base}/overview`}>Overview</Link>
-              <Link to={`${base}/traces`} activePrefix={`${base}/traces`}>Traces</Link>
-              <Link to={`${base}/load`}>Load test</Link>
-              {!proj?.is_default ? <Link to={`${base}/connect`}>Repository</Link> : null}
-              <Link to={`${base}/settings`}>Settings</Link>
-            </>
-          ) : <Link to="/projects">Projects</Link>}
-          {user?.admin ? <Link to="/admin">Pipeline admin</Link> : null}
-        </nav>
-        <div className="rail-foot">
-          <div className="user">
-            {user?.avatar_url ? <img src={user.avatar_url} alt="" width="22" height="22" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : null}
-            <span>{user?.login}</span>
-          </div>
-          <ThemeSwitch />
-          <button type="button" className="quiet" onClick={signOut}>Sign out</button>
+    <>
+      <a className="skip-link" href="#main">Skip to content</a>
+      <div className={`shell${menuOpen ? ' nav-open' : ''}`}>
+        <Sidebar
+          projects={projects}
+          pid={pid}
+          project={proj}
+          user={user}
+          menuOpen={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onSignOut={signOut}
+        />
+        <div className="main-column">
+          <Topbar pid={pid} project={proj} section={section} menuOpen={menuOpen} onMenu={() => setMenuOpen((v) => !v)} />
+          <main className="main" id="main">
+            {page}
+          </main>
+          <footer className="app-footer">
+            <span>Tracepipe · OpenTelemetry trace pipeline</span>
+            <span className="muted">Metrics polled every 2s · history limited to this browser session</span>
+          </footer>
         </div>
-      </aside>
-      <main className="main">{page}</main>
-    </div>
+      </div>
+    </>
   );
 }

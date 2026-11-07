@@ -6,9 +6,9 @@ export const THEMES = ['system', 'light', 'dark'];
 export function readTheme() {
   try {
     const v = window.localStorage.getItem(KEY);
-    return THEMES.includes(v) ? v : 'system';
+    return THEMES.includes(v) ? v : 'dark';
   } catch {
-    return 'system';
+    return 'dark';
   }
 }
 

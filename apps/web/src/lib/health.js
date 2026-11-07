@@ -67,6 +67,48 @@ export function pipelineStages(m, prev) {
   return [receive, queue, assemble, sample, store, archive];
 }
 
+/** A compact list of operational checks for the overview and pipeline pages. */
+export function pipelineChecks(m) {
+  if (!m) return [];
+  const b = m.batching;
+  const q = m.queue;
+  const proc = m.process || {};
+  const loopP99 = proc.event_loop_delay_ms?.p99;
+  const archiveFailures = m.archive.archive_failures;
+  return [
+    {
+      key: 'api', label: 'Collector API',
+      state: 'ok',
+      value: 'Responding',
+      detail: `Uptime ${Math.floor((m.uptime_s || 0) / 60)} min`,
+    },
+    {
+      key: 'queue', label: 'Queue',
+      state: q.queue_state === 'FULL' ? 'bad' : q.queue_state === 'SOFT' ? 'warn' : 'ok',
+      value: `${num(q.queue_depth)} waiting`,
+      detail: q.queue_state === 'FULL' ? 'Hard limit: refusing new spans' : q.queue_state === 'SOFT' ? 'Soft limit: sampling tightened' : 'Draining normally',
+    },
+    {
+      key: 'storage', label: 'Hot storage',
+      state: b.breaker_state === 'open' ? 'bad' : b.breaker_state === 'half_open' || b.pending_batches > 2 ? 'warn' : 'ok',
+      value: b.breaker_state === 'closed' ? 'Writes flowing' : `Breaker ${b.breaker_state.replace('_', ' ')}`,
+      detail: `${plural(b.pending_batches, 'batch', 'batches')} pending`,
+    },
+    {
+      key: 'archive', label: 'Cold archive',
+      state: archiveFailures ? 'warn' : 'ok',
+      value: archiveFailures ? 'Retrying' : 'Available',
+      detail: `${num(m.archive.cold_trace_count ?? 0)} traces archived`,
+    },
+    {
+      key: 'process', label: 'Collector process',
+      state: loopP99 !== null && loopP99 !== undefined && loopP99 > 50 ? 'warn' : 'ok',
+      value: proc.rss_mb ? `${proc.rss_mb} MB RSS` : 'Healthy',
+      detail: loopP99 !== null && loopP99 !== undefined ? `Event loop p99 ${loopP99} ms` : 'No event-loop samples yet',
+    },
+  ];
+}
+
 /** One sentence for the top of the page: the worst problem, or a calm summary. */
 export function headline(stages, m) {
   if (!m) return { state: 'idle', text: 'Connecting to the collector…', detail: '' };

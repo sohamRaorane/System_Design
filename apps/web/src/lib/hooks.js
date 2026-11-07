@@ -29,7 +29,9 @@ export function useData(load, deps = [], { every } = {}) {
     const id = setInterval(() => {
       if (alive && document.visibilityState === 'visible') refresh();
     }, every);
-    return () => { alive = false; clearInterval(id); };
+    const onRefresh = () => { if (alive) refresh(); };
+    window.addEventListener('tracepipe:refresh', onRefresh);
+    return () => { alive = false; clearInterval(id); window.removeEventListener('tracepipe:refresh', onRefresh); };
   }, [refresh, every]);
 
   return { ...state, refresh };

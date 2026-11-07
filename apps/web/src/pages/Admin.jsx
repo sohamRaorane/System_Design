@@ -2,9 +2,11 @@
 // to watch on the overview, so the recovery mechanisms in the architecture can be seen working.
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
-import { useData, usePrevious } from '../lib/hooks.js';
+import { useData } from '../lib/hooks.js';
 import { pipelineStages } from '../lib/health.js';
+import { usePipeline } from '../lib/pipeline.js';
 import { FlowStrip } from '../components/FlowStrip.jsx';
+import { EmptyState, ErrorNotice, PageHeader, Panel, StatusBadge } from '../components/ui.jsx';
 
 const DRILLS = [
   { key: 'storage_down', title: 'Storage goes down', what: 'Writes to the database fail.', watch: 'Store turns red: batches wait safely, retries back off, the circuit breaker opens. Switch it off and everything waiting is written, nothing lost.' },
@@ -48,9 +50,8 @@ const GROUPS = [
 ];
 
 export function Admin() {
-  const metrics = useData(() => api.pipeline(), [], { every: 2000 });
-  const prev = usePrevious(metrics.data);
-  const stages = useMemo(() => pipelineStages(metrics.data, prev), [metrics.data, prev]);
+  const pipeline = usePipeline();
+  const stages = useMemo(() => pipelineStages(pipeline.data, pipeline.prev), [pipeline.data, pipeline.prev]);
   const faults = useData(() => api.faults(), [], { every: 4000 });
   const config = useData(() => api.adminConfig(), []);
   const [form, setForm] = useState(null);
@@ -58,7 +59,13 @@ export function Admin() {
   useEffect(() => { if (config.data) setForm({ ...config.data.config }); }, [config.data]);
 
   if (config.error?.status === 403 || config.error?.status === 401) {
-    return <div className="empty"><p>This page is for administrators.</p><p className="small muted">Ask the operator to add your GitHub login to ADMIN_GITHUB_LOGINS.</p></div>;
+    return (
+      <Panel title="Administrators only">
+        <EmptyState title="This page is for administrators.">
+          Ask the operator to add your GitHub login to ADMIN_GITHUB_LOGINS.
+        </EmptyState>
+      </Panel>
+    );
   }
 
   const toggle = async (key, value) => { await api.setFaults({ [key]: value }); faults.refresh(); };
@@ -77,16 +84,26 @@ export function Admin() {
     }
   };
 
+  const activeFaults = Object.entries(faults.data?.faults || {}).filter(([, on]) => on).length;
+
   return (
     <>
-      <div className="page-head">
-        <div><h1>Pipeline admin</h1><p>Settings that apply to every project, and drills that break one part on purpose so you can watch the pipeline recover.</p></div>
-      </div>
-      {metrics.data ? <FlowStrip stages={stages} /> : null}
-      <div className="stack" style={{ maxWidth: 980 }}>
+      <PageHeader
+        title="Pipeline admin"
+        description="Settings that apply to every project, and drills that break one part on purpose so you can watch the pipeline recover."
+        actions={<StatusBadge tone={activeFaults ? 'bad' : 'ok'} pulse={Boolean(activeFaults)}>{activeFaults ? `${activeFaults} drill${activeFaults === 1 ? '' : 's'} active` : 'No drills active'}</StatusBadge>}
+      />
+      <ErrorNotice error={config.error && config.error.status !== 403 && config.error.status !== 401 ? config.error : null} />
+      {pipeline.data ? <FlowStrip stages={stages} /> : null}
+
+      <div className="stack admin-stack">
         <section className="panel stack">
-          <h2>Failure drills</h2>
-          <p className="small muted">Turn one on, watch the strip above for a minute, then turn it off. Use demo traffic to have spans flowing.</p>
+          <div className="panel-head">
+            <div>
+              <h2>Failure drills</h2>
+              <p className="panel-sub">Turn one on, watch the strip above for a minute, then turn it off. Use simulated traffic so spans are flowing.</p>
+            </div>
+          </div>
           {DRILLS.map((d) => {
             const on = Boolean(faults.data?.faults?.[d.key]);
             return (
@@ -107,8 +124,12 @@ export function Admin() {
 
         {form ? (
           <form className="panel stack" onSubmit={save}>
-            <h2>Pipeline settings</h2>
-            <p className="small muted">Projects can override sampling and retention in their own settings.</p>
+            <div className="panel-head">
+              <div>
+                <h2>Pipeline settings</h2>
+                <p className="panel-sub">Projects can override sampling and retention in their own settings.</p>
+              </div>
+            </div>
             {GROUPS.map((g) => (
               <fieldset key={g.title} className="cfg-group">
                 <legend>{g.title}</legend>
@@ -122,7 +143,10 @@ export function Admin() {
                 ))}
               </fieldset>
             ))}
-            <div className="row"><button type="submit">Save pipeline settings</button>{msg ? <span className="small" role="status" style={{ color: msg.ok ? 'var(--signal)' : 'var(--bad)' }}>{msg.text}</span> : null}</div>
+            <div className="row">
+              <button type="submit">Save pipeline settings</button>
+              {msg ? <span className="small" role="status" style={{ color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.text}</span> : null}
+            </div>
           </form>
         ) : null}
       </div>
