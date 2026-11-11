@@ -23,5 +23,9 @@
     "reconcile": "npm run reconcile -w @system-design/loadgen",
     "secrets": "node tools/scripts/generate-secrets.js",
     "e2e": "npm run e2e -w @system-design/e2e"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": ">=0.56.0 <1.0.0"
   }
 }
